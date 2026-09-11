@@ -2,7 +2,7 @@ import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import type { EnvironmentVariables } from './config/env.validation';
+import { type EnvironmentVariables, listenTarget } from './config/env.validation';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -13,6 +13,10 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   const config = app.get<ConfigService<EnvironmentVariables, true>>(ConfigService);
-  await app.listen(config.get('PORT', { infer: true }));
+  const [port, host] = listenTarget({
+    PORT: config.get('PORT', { infer: true }),
+    HOST: config.get('HOST', { infer: true }),
+  });
+  await (host ? app.listen(port, host) : app.listen(port));
 }
 void bootstrap();

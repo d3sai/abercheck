@@ -1,4 +1,4 @@
-import { NodeEnv, validateEnv } from './env.validation';
+import { listenTarget, NodeEnv, validateEnv } from './env.validation';
 
 describe('validateEnv', () => {
   const valid = {
@@ -8,10 +8,26 @@ describe('validateEnv', () => {
     TELEGRAM_ADMIN_CHAT_ID: '-1002286861249',
   };
 
-  it('should apply defaults and convert PORT to a number', () => {
-    const env = validateEnv({ ...valid, PORT: '8080' });
+  it('should apply defaults', () => {
+    expect(validateEnv(valid)).toMatchObject({ NODE_ENV: NodeEnv.Development, PORT: '3000' });
+  });
 
-    expect(env).toMatchObject({ NODE_ENV: NodeEnv.Development, PORT: 8080 });
+  it('should listen on a TCP port bound to the host given by the hosting', () => {
+    const env = validateEnv({ ...valid, PORT: '3000', HOST: '127.12.34.56' });
+
+    expect(listenTarget(env)).toEqual([3000, '127.12.34.56']);
+  });
+
+  it('should listen on a unix socket when PORT is a path and HOST is empty', () => {
+    const socket = '/home/user/.system/nodejs/bot.example.com.sock';
+    const env = validateEnv({ ...valid, PORT: socket, HOST: '' });
+
+    expect(env.HOST).toBeUndefined();
+    expect(listenTarget(env)).toEqual([socket]);
+  });
+
+  it.each(['0', 'abc', 'relative/path.sock', '3000 '])('should reject PORT %p', (PORT) => {
+    expect(() => validateEnv({ ...valid, PORT })).toThrow(/PORT/);
   });
 
   it('should fail fast when DATABASE_URL is missing', () => {

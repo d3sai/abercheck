@@ -1,11 +1,10 @@
-import { plainToInstance, Type } from 'class-transformer';
+import { plainToInstance, Transform, Type } from 'class-transformer';
 import {
   IsEnum,
   IsInt,
+  IsOptional,
   IsString,
   Matches,
-  Max,
-  Min,
   MinLength,
   validateSync,
 } from 'class-validator';
@@ -20,11 +19,17 @@ export class EnvironmentVariables {
   @IsEnum(NodeEnv)
   NODE_ENV: NodeEnv = NodeEnv.Development;
 
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(65535)
-  PORT = 3000;
+  @Matches(/^([1-9]\d{0,4}|\/\S+)$/, {
+    message: 'PORT must be a TCP port or an absolute path to a unix socket',
+  })
+  PORT = '3000';
+
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined,
+  )
+  @IsOptional()
+  @IsString()
+  HOST?: string;
 
   @Matches(/^postgres(ql)?:\/\//, {
     message: 'DATABASE_URL must be a PostgreSQL connection string',
@@ -43,6 +48,14 @@ export class EnvironmentVariables {
   @Type(() => Number)
   @IsInt()
   TELEGRAM_ADMIN_CHAT_ID!: number;
+}
+
+export function listenTarget({
+  PORT,
+  HOST,
+}: Pick<EnvironmentVariables, 'PORT' | 'HOST'>): [number | string, string?] {
+  const port = /^\d+$/.test(PORT) ? Number(PORT) : PORT;
+  return HOST ? [port, HOST] : [port];
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {
