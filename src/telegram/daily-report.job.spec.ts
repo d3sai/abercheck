@@ -71,6 +71,18 @@ describe('DailyReportJob', () => {
     );
   });
 
+  it('should run on schedule with the current time even if cron passes its own arguments', async () => {
+    reports.markUnderpaid.mockResolvedValue([]);
+    const onSchedule: (...args: unknown[]) => Promise<void> = job.onSchedule.bind(job);
+
+    await onSchedule(() => undefined);
+
+    const [todayStart] = reports.markUnderpaid.mock.calls[0] as [Date];
+    expect(todayStart).toBeInstanceOf(Date);
+    expect(Number.isNaN(todayStart.getTime())).toBe(false);
+    expect(sender.sendToAdmins).toHaveBeenCalledWith(expect.stringContaining('📊'));
+  });
+
   it('should not throw when the report fails', async () => {
     reports.markUnderpaid.mockRejectedValue(new Error('db down'));
 

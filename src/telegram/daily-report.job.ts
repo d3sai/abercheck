@@ -16,7 +16,11 @@ export class DailyReportJob {
   ) {}
 
   @Cron('0 9 * * *', { name: 'daily-report', timeZone: KYIV_TIME_ZONE })
-  async run(now = new Date()): Promise<void> {
+  async onSchedule(): Promise<void> {
+    await this.run(new Date());
+  }
+
+  async run(now: Date): Promise<void> {
     try {
       const todayStart = kyivDayStart(now);
       const underpaid = await this.reports.markUnderpaid(todayStart);
