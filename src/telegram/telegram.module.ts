@@ -9,6 +9,7 @@ import { RefundsModule } from '../refunds/refunds.module';
 import { ReportsModule } from '../reports/reports.module';
 import { AdminFlowService } from './admin/admin-flow.service';
 import { AdminUpdate } from './admin/admin.update';
+import { BotLauncher } from './bot-launcher';
 import { BotUpdate } from './bot.update';
 import { DailyReportJob } from './daily-report.job';
 import { PaymentNotifier } from './notifications/payment-notifier';
@@ -23,6 +24,7 @@ import { TelegramSender } from './telegram-sender';
       useFactory: (config: ConfigService<EnvironmentVariables, true>) => ({
         token: config.get('TELEGRAM_BOT_TOKEN', { infer: true }),
         include: [TelegramModule],
+        launchOptions: false,
       }),
     }),
     ManagersModule,
@@ -32,6 +34,7 @@ import { TelegramSender } from './telegram-sender';
     ReportsModule,
   ],
   providers: [
+    BotLauncher,
     BotUpdate,
     AdminUpdate,
     TelegramSender,
