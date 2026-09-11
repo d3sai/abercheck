@@ -13,9 +13,11 @@ describe('OrdersService', () => {
     create: jest.fn(),
     findUnique: jest.fn(),
     findMany: jest.fn(),
+    count: jest.fn(),
     update: jest.fn(),
   };
   const payment = { groupBy: jest.fn() };
+  const refund = { groupBy: jest.fn() };
   let service: OrdersService;
 
   const dto: CreateOrderDto = {
@@ -26,10 +28,12 @@ describe('OrdersService', () => {
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
-      providers: [OrdersService, { provide: PrismaService, useValue: { order, payment } }],
+      providers: [OrdersService, { provide: PrismaService, useValue: { order, payment, refund } }],
     }).compile();
 
     service = moduleRef.get(OrdersService);
+    payment.groupBy.mockResolvedValue([]);
+    refund.groupBy.mockResolvedValue([]);
   });
 
   afterEach(() => jest.resetAllMocks());
@@ -67,30 +71,51 @@ describe('OrdersService', () => {
     });
   });
 
-  describe('findMany', () => {
-    it('should filter by manager and statuses', async () => {
+  describe('list', () => {
+    it('should filter by manager and statuses, newest first, with the total count', async () => {
       order.findMany.mockResolvedValue([]);
+      order.count.mockResolvedValue(42);
 
-      await service.findMany({
-        managerId: 7,
-        statuses: [OrderStatus.AWAITING_PAYMENT, OrderStatus.PARTIALLY_PAID],
-      });
+      const result = await service.list(
+        { managerId: 7, statuses: [OrderStatus.AWAITING_PAYMENT, OrderStatus.PARTIALLY_PAID] },
+        25,
+      );
 
+      const where = { managerId: 7, status: { in: ['AWAITING_PAYMENT', 'PARTIALLY_PAID'] } };
       expect(order.findMany).toHaveBeenCalledWith({
-        where: { managerId: 7, status: { in: ['AWAITING_PAYMENT', 'PARTIALLY_PAID'] } },
+        where,
+        include: { manager: true },
         orderBy: { createdAt: 'desc' },
+        take: 25,
       });
+      expect(order.count).toHaveBeenCalledWith({ where });
+      expect(result).toEqual({ items: [], total: 42 });
+    });
+  });
+
+  describe('findWithBalance', () => {
+    it('should look up the normalized number and subtract refunds', async () => {
+      order.findUnique.mockResolvedValue({ id: 1 });
+      payment.groupBy.mockResolvedValue([
+        { orderId: 1, _sum: { amount: new Prisma.Decimal('6208.41') } },
+      ]);
+      refund.groupBy.mockResolvedValue([
+        { orderId: 1, _sum: { amount: new Prisma.Decimal('50') } },
+      ]);
+
+      const result = await service.findWithBalance('№Р 0000-066717');
+
+      expect(order.findUnique).toHaveBeenCalledWith({
+        where: { orderNumber: '0000-066717' },
+        include: { manager: true },
+      });
+      expect(result?.amountPaid.toFixed(2)).toBe('6158.41');
     });
 
-    it('should not filter when no criteria are given', async () => {
-      order.findMany.mockResolvedValue([]);
+    it('should return null for an unknown order', async () => {
+      order.findUnique.mockResolvedValue(null);
 
-      await service.findMany();
-
-      expect(order.findMany).toHaveBeenCalledWith({
-        where: { managerId: undefined, status: undefined },
-        orderBy: { createdAt: 'desc' },
-      });
+      await expect(service.findWithBalance('0000-000000')).resolves.toBeNull();
     });
   });
 

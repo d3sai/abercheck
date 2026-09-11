@@ -4,7 +4,6 @@ import { escapeHtml } from '../format';
 
 export const ACCESS_DECISION = /^manager:(approve|reject):(\d+)$/;
 
-/** Заявка в адмінський чат із кнопками рішення. */
 export function accessRequest(manager: Manager): BotReply {
   return {
     html: requestText(manager),
@@ -17,7 +16,6 @@ export function accessRequest(manager: Manager): BotReply {
   };
 }
 
-/** Та сама заявка після рішення — без кнопок, з тим, хто вирішив. */
 export function decidedAccessRequest(manager: Manager, adminName: string): string {
   const verdict = manager.status === ManagerStatus.ACTIVE ? '✅ Доступ надано' : '❌ Відхилено';
   return `${requestText(manager)}\n\n${verdict} · ${escapeHtml(adminName)}`;
@@ -33,10 +31,10 @@ function requestText(manager: Manager): string {
 }
 
 export const HELP =
-  'Команди:\n/new — створити замовлення\n/cancel — скасувати створення\n\n' +
+  'Команди:\n/new — створити замовлення\n/list — мої відкриті замовлення (/list all — усі)\n' +
+  '/cancel — скасувати створення замовлення\n\n' +
   'Сповіщення про оплати за вашими замовленнями надходитимуть сюди автоматично.';
 
-/** Відповідь на /start залежно від стану заявки. */
 export function startReply(manager: Manager, isNew: boolean): BotReply {
   if (isNew) {
     return { html: 'Заявку на доступ надіслано адміністраторам. Я напишу, щойно її розглянуть.' };
@@ -53,7 +51,6 @@ export function startReply(manager: Manager, isNew: boolean): BotReply {
   }
 }
 
-/** Повідомлення людині, яка подала заявку. */
 export function decisionNotice(manager: Manager): string {
   return manager.status === ManagerStatus.ACTIVE
     ? `✅ Доступ надано.\n\n${HELP}`

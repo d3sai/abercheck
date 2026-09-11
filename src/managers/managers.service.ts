@@ -16,15 +16,10 @@ export class ManagersService {
     return this.prisma.manager.findUnique({ where: { id } });
   }
 
-  /** Менеджер, якому адміністратор уже надав доступ. */
   findActiveByTelegramId(telegramId: bigint): Promise<Manager | null> {
     return this.prisma.manager.findFirst({ where: { telegramId, status: ManagerStatus.ACTIVE } });
   }
 
-  /**
-   * Заявка на доступ при першому /start. Для наявного запису лише оновлює ім'я та username,
-   * статус не змінює. `isNew` — чи треба надіслати заявку адміністраторам.
-   */
   async requestAccess(profile: TelegramProfile): Promise<{ manager: Manager; isNew: boolean }> {
     const { telegramId, name, username } = profile;
     const existing = await this.prisma.manager.findUnique({ where: { telegramId } });
@@ -40,10 +35,6 @@ export class ManagersService {
     return { manager, isNew: true };
   }
 
-  /**
-   * Рішення адміністратора щодо заявки. Повертає null, якщо заявку вже розглянули
-   * (наприклад, двоє адмінів натиснули кнопку одночасно).
-   */
   async decide(id: number, approve: boolean): Promise<Manager | null> {
     const { count } = await this.prisma.manager.updateMany({
       where: { id, status: ManagerStatus.PENDING },

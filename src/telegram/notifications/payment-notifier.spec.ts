@@ -100,9 +100,50 @@ describe('PaymentNotifier', () => {
     await expect(notifier.onRecorded(event(OrderStatus.PAID))).resolves.toBeUndefined();
   });
 
-  it('should send unknown payments to the admin chat', async () => {
+  it('should send unknown payments to the admin chat with an attach button', async () => {
     await notifier.onUnmatched({ kind: 'unmatched', payment: { ...payment, orderId: null } });
 
-    expect(sender.sendToAdmins).toHaveBeenCalledWith(expect.stringContaining('Невідомий платіж'));
+    expect(sender.sendToAdmins).toHaveBeenCalledWith(expect.stringContaining('Невідомий платіж'), [
+      [{ text: "🔗 Прив'язати до замовлення", callback_data: 'attach:5' }],
+    ]);
+  });
+
+  it('should tell the manager about a refund on their order', async () => {
+    const { order } = event(OrderStatus.PAID);
+
+    await notifier.onRefund({
+      order,
+      previousStatus: OrderStatus.OVERPAID,
+      amountPaid: new Prisma.Decimal('3000'),
+      refund: {
+        id: 1,
+        orderId: 1,
+        amount: new Prisma.Decimal('50'),
+        type: 'PARTIAL',
+        initiatedByTelegramId: 111n,
+        initiatedByName: 'Уляна',
+        note: null,
+        createdAt: new Date(),
+      },
+    });
+
+    expect(prisma.manager.findUniqueOrThrow).toHaveBeenCalledWith({ where: { id: 7 } });
+    expect(sender.send).toHaveBeenCalledWith(
+      5000000000n,
+      expect.stringMatching(/Повернено: 50 грн[\s\S]*Статус: 🟢 Оплачено[\s\S]*Уляна/),
+    );
+  });
+
+  it('should tell the manager their unpaid order was cancelled', async () => {
+    await notifier.onCancelled({
+      order: event(OrderStatus.CANCELLED).order,
+      previousStatus: OrderStatus.AWAITING_PAYMENT,
+      initiator: { telegramId: 111n, name: 'Уляна' },
+    });
+
+    expect(sender.send).toHaveBeenCalledWith(
+      5000000000n,
+      expect.stringContaining('Замовлення скасовано'),
+    );
   });
 });

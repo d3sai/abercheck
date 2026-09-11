@@ -1,7 +1,6 @@
 import type { OrderStatus } from '../../generated/prisma/client';
 import type { OrderWithPaid } from '../orders.service';
 
-/** Контракт GET /api/orders/unpaid. Суми — рядки з двома знаками, щоб не втрачати копійки. */
 export interface UnpaidOrderResponse {
   order_number: string;
   client_name: string;

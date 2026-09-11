@@ -1,5 +1,5 @@
 import { Logger, type OnApplicationBootstrap } from '@nestjs/common';
-import { Action, Command, Ctx, Help, On, Start, Update } from 'nestjs-telegraf';
+import { Action, Command, Ctx, Help, Next, On, Start, Update } from 'nestjs-telegraf';
 import type { Context } from 'telegraf';
 import type { Manager } from '../generated/prisma/client';
 import { ManagersService } from '../managers/managers.service';
@@ -12,28 +12,21 @@ import {
   NOT_A_MANAGER,
   startReply,
 } from './access/access.messages';
+import { ADMIN_HELP } from './admin/admin.update';
 import type { BotReply } from './bot-reply';
+import { OrderListService } from './order-list.service';
 import { DraftAction, OrderDraftService } from './order-draft/order-draft.service';
+import {
+  type CommandContext,
+  fullName,
+  isPrivate,
+  type MatchContext,
+  reply,
+} from './telegram-context';
 import { TelegramSender } from './telegram-sender';
 
-type MatchContext = Context & { match: RegExpExecArray };
+type Next = () => Promise<void>;
 
-async function reply(ctx: Context, { html, buttons }: BotReply): Promise<void> {
-  await ctx.reply(html, {
-    parse_mode: 'HTML',
-    reply_markup: buttons ? { inline_keyboard: buttons } : undefined,
-  });
-}
-
-const isPrivate = (ctx: Context) => ctx.chat?.type === 'private';
-const fullName = (ctx: Context) =>
-  [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || 'Без імені';
-
-/**
- * Усі обробники бота. Порядок методів важливий: nestjs-telegraf реєструє їх саме так,
- * тож команди стоять перед загальним обробником тексту. Методи нічого не повертають —
- * інакше бібліотека відправить результат як повідомлення.
- */
 @Update()
 export class BotUpdate implements OnApplicationBootstrap {
   private readonly logger = new Logger(BotUpdate.name);
@@ -41,15 +34,29 @@ export class BotUpdate implements OnApplicationBootstrap {
   constructor(
     private readonly managers: ManagersService,
     private readonly drafts: OrderDraftService,
+    private readonly lists: OrderListService,
     private readonly sender: TelegramSender,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
-    await this.sender.registerCommands([
-      { command: 'new', description: 'Створити замовлення' },
-      { command: 'cancel', description: 'Скасувати створення замовлення' },
-      { command: 'help', description: 'Що вміє бот' },
-    ]);
+    await this.sender.registerCommands(
+      [
+        { command: 'new', description: 'Створити замовлення' },
+        { command: 'list', description: 'Мої відкриті замовлення' },
+        { command: 'cancel', description: 'Скасувати створення замовлення' },
+        { command: 'help', description: 'Що вміє бот' },
+      ],
+      { type: 'all_private_chats' },
+    );
+    await this.sender.registerCommands(
+      [
+        { command: 'list', description: 'Відкриті замовлення й невідомі платежі' },
+        { command: 'refund', description: 'Повернення або скасування: /refund 0000-066717' },
+        { command: 'attach', description: "Прив'язати платіж: /attach 15 0000-066717" },
+        { command: 'help', description: 'Команди адміністратора' },
+      ],
+      { type: 'chat', chat_id: this.sender.adminChatId },
+    );
   }
 
   @Start()
@@ -71,8 +78,30 @@ export class BotUpdate implements OnApplicationBootstrap {
 
   @Help()
   async help(@Ctx() ctx: Context): Promise<void> {
-    if (isPrivate(ctx)) {
+    if (ctx.chat?.id === this.sender.adminChatId) {
+      await reply(ctx, { html: ADMIN_HELP });
+    } else if (isPrivate(ctx)) {
       await reply(ctx, { html: HELP });
+    }
+  }
+
+  @Command('chatid')
+  async chatId(@Ctx() ctx: Context): Promise<void> {
+    if (ctx.chat) {
+      await reply(ctx, { html: `ID цього чату: <code>${ctx.chat.id}</code>` });
+    }
+  }
+
+  @Command('list')
+  async list(@Ctx() ctx: CommandContext): Promise<void> {
+    const all = ctx.payload?.trim().toLowerCase() === 'all';
+    if (ctx.chat?.id === this.sender.adminChatId) {
+      await reply(ctx, await this.lists.forAdmins(all));
+      return;
+    }
+    const manager = await this.activeManager(ctx);
+    if (manager) {
+      await reply(ctx, await this.lists.forManager(manager.id, all));
     }
   }
 
@@ -90,15 +119,6 @@ export class BotUpdate implements OnApplicationBootstrap {
     }
   }
 
-  /** Службова: ID поточного чату — щоб налаштувати TELEGRAM_ADMIN_CHAT_ID. */
-  @Command('chatid')
-  async chatId(@Ctx() ctx: Context): Promise<void> {
-    if (ctx.chat) {
-      await reply(ctx, { html: `ID цього чату: <code>${ctx.chat.id}</code>` });
-    }
-  }
-
-  /** Кнопки заявки. Рішення приймаються лише в адмінському чаті. */
   @Action(ACCESS_DECISION)
   async decideAccess(@Ctx() ctx: MatchContext): Promise<void> {
     if (ctx.chat?.id !== this.sender.adminChatId) {
@@ -137,15 +157,10 @@ export class BotUpdate implements OnApplicationBootstrap {
     await this.answerDraftButton(ctx, result, '');
   }
 
-  /** Текст у особистому чаті — це відповідь на поточний крок створення замовлення. */
   @On('text')
-  async text(@Ctx() ctx: Context): Promise<void> {
-    if (!isPrivate(ctx) || !ctx.from || !ctx.text) {
-      return;
-    }
-    if (ctx.text.startsWith('/')) {
-      await reply(ctx, { html: `Невідома команда.\n\n${HELP}` });
-      return;
+  async text(@Ctx() ctx: Context, @Next() next: Next): Promise<void> {
+    if (!isPrivate(ctx) || !ctx.from || !ctx.text || ctx.text.startsWith('/')) {
+      return next();
     }
     const userId = BigInt(ctx.from.id);
     if (!this.drafts.hasDraft(userId)) {
@@ -156,13 +171,12 @@ export class BotUpdate implements OnApplicationBootstrap {
       this.drafts.cancel(userId);
       return;
     }
-    const next = await this.drafts.input(userId, ctx.text);
-    if (next) {
-      await reply(ctx, next);
+    const answer = await this.drafts.input(userId, ctx.text);
+    if (answer) {
+      await reply(ctx, answer);
     }
   }
 
-  /** Прибирає кнопки з натиснутого повідомлення, щоб старий крок не можна було натиснути ще раз. */
   private async answerDraftButton(
     ctx: Context,
     result: BotReply | null,
@@ -176,7 +190,6 @@ export class BotUpdate implements OnApplicationBootstrap {
     await reply(ctx, result);
   }
 
-  /** Активний менеджер в особистому чаті; інакше пояснює, чому дію не виконано. */
   private async activeManager(ctx: Context): Promise<Manager | null> {
     if (!isPrivate(ctx) || !ctx.from) {
       return null;

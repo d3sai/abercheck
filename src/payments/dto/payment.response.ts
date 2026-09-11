@@ -1,9 +1,7 @@
 import type { OrderStatus } from '../../generated/prisma/client';
 import type { IngestionResult } from '../payment-ingestion.types';
 
-/** Контракт відповіді POST /api/payments. */
 export interface PaymentResponse {
-  /** recorded — прив'язано; unmatched — чекає ручної перевірки; already_processed — дубль. */
   result: 'recorded' | 'unmatched' | 'already_processed';
   payment_id: number;
   order_number: string | null;

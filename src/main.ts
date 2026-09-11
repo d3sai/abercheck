@@ -8,9 +8,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api');
-  // /api/v1/... — зміни контракту для сервісу-джерела підуть у нову версію, не ламаючи v1.
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-  // Невідомі поля мовчки відкидаються: нове поле від сервісу-джерела не має ламати інтеграцію.
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.enableShutdownHooks();
 

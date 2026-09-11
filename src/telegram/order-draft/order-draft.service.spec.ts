@@ -12,7 +12,6 @@ describe('OrderDraftService', () => {
   const buttonData = (reply: BotReply | null) =>
     reply?.buttons?.flat().map((b) => ('callback_data' in b ? b.callback_data : undefined));
 
-  /** Проходить обов'язкові кроки: номер, клієнт, сума. */
   async function fillRequired(): Promise<void> {
     service.start(USER);
     await service.input(USER, '№А 0000-066717');

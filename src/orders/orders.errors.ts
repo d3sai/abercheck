@@ -11,3 +11,10 @@ export class OrderNotFoundError extends Error {
     this.name = 'OrderNotFoundError';
   }
 }
+
+export class OrderCancelledError extends Error {
+  constructor(readonly orderNumber: string) {
+    super(`Order ${orderNumber} is cancelled`);
+    this.name = 'OrderCancelledError';
+  }
+}

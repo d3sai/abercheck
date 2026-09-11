@@ -7,12 +7,9 @@ import {
 } from '../../generated/prisma/client';
 import { escapeHtml, formatKyivDate, formatKyivDateTime, formatMoney } from '../format';
 
-/** Стан замовлення на момент конкретного платежу. */
 export interface PaymentNotice {
-  /** Замовлення зі статусом, який воно отримало після цього платежу. */
   order: Order;
   payment: Payment;
-  /** Усі платежі замовлення до цього включно, за часом. */
   payments: Payment[];
   amountPaid: Prisma.Decimal;
 }
@@ -74,7 +71,6 @@ function paidAfterCancel({ order, payment }: PaymentNotice): string {
   ].join('\n');
 }
 
-/** Повідомлення відповідальному менеджеру після прив'язки платежу (розділ 5 вихідного ТЗ). */
 export function managerPaymentMessage(notice: PaymentNotice): string {
   switch (notice.order.status) {
     case OrderStatus.PAID:
@@ -88,17 +84,14 @@ export function managerPaymentMessage(notice: PaymentNotice): string {
   }
 }
 
-/** Статуси, про які треба знати й адміністраторам. */
 export function needsAdminAttention(status: OrderStatus): boolean {
   return status === OrderStatus.OVERPAID || status === OrderStatus.CANCELLED;
 }
 
-/** Копія для адмінського чату: те саме повідомлення плюс відповідальний менеджер. */
 export function adminPaymentMessage(notice: PaymentNotice, manager: Manager): string {
   return `${managerPaymentMessage(notice)}\nМенеджер: ${escapeHtml(manager.name)}`;
 }
 
-/** Платіж без замовлення — для адмінського чату. */
 export function unknownPaymentMessage(payment: Payment): string {
   return [
     '⚠️ <b>Невідомий платіж</b>',

@@ -6,6 +6,12 @@ import {
   type PaymentUnmatched,
 } from '../../payments/payment-ingestion.types';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  type OrderCancelled,
+  RefundEvents,
+  type RefundRecorded,
+} from '../../refunds/refund.events';
+import { button } from '../bot-reply';
 import { TelegramSender } from '../telegram-sender';
 import {
   adminPaymentMessage,
@@ -13,6 +19,7 @@ import {
   needsAdminAttention,
   unknownPaymentMessage,
 } from './payment-templates';
+import { managerCancelMessage, managerRefundMessage } from './refund-templates';
 
 @Injectable()
 export class PaymentNotifier {
@@ -28,8 +35,6 @@ export class PaymentNotifier {
     try {
       const [manager, payments] = await Promise.all([
         this.prisma.manager.findUniqueOrThrow({ where: { id: order.managerId } }),
-        // Лише платежі до цього включно: повідомлення описує стан на момент цього платежу,
-        // навіть якщо наступний переказ уже встиг надійти.
         this.prisma.payment.findMany({
           where: { orderId: order.id, id: { lte: payment.id } },
           orderBy: [{ paidAt: 'asc' }, { id: 'asc' }],
@@ -48,6 +53,27 @@ export class PaymentNotifier {
 
   @OnEvent(PaymentEvents.Unmatched, { async: true })
   async onUnmatched({ payment }: PaymentUnmatched): Promise<void> {
-    await this.sender.sendToAdmins(unknownPaymentMessage(payment));
+    await this.sender.sendToAdmins(unknownPaymentMessage(payment), [
+      [button("🔗 Прив'язати до замовлення", `attach:${payment.id}`)],
+    ]);
+  }
+
+  @OnEvent(RefundEvents.Recorded, { async: true })
+  async onRefund(event: RefundRecorded): Promise<void> {
+    await this.notifyManager(event.order.managerId, managerRefundMessage(event));
+  }
+
+  @OnEvent(RefundEvents.OrderCancelled, { async: true })
+  async onCancelled(event: OrderCancelled): Promise<void> {
+    await this.notifyManager(event.order.managerId, managerCancelMessage(event));
+  }
+
+  private async notifyManager(managerId: number, html: string): Promise<void> {
+    try {
+      const manager = await this.prisma.manager.findUniqueOrThrow({ where: { id: managerId } });
+      await this.sender.send(manager.telegramId, html);
+    } catch (error) {
+      this.logger.error(`Failed to notify manager #${managerId}`, error);
+    }
   }
 }

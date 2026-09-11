@@ -10,7 +10,6 @@ import { PaymentsService } from './payments.service';
 export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
 
-  /** 201 — новий платіж записано; 200 — транзакцію вже обробляли (ідемпотентний повтор). */
   @Post()
   async create(
     @Body() dto: CreatePaymentDto,

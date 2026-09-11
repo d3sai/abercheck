@@ -2,10 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectBot } from 'nestjs-telegraf';
 import { Telegraf } from 'telegraf';
-import type { BotCommand, InlineKeyboardButton } from 'telegraf/types';
+import type { BotCommand, BotCommandScope, InlineKeyboardButton } from 'telegraf/types';
 import type { EnvironmentVariables } from '../config/env.validation';
 
-/** Надсилання повідомлень поза контекстом діалогу: сповіщення, заявки, рішення адмінів. */
 @Injectable()
 export class TelegramSender {
   private readonly logger = new Logger(TelegramSender.name);
@@ -18,10 +17,6 @@ export class TelegramSender {
     this.adminChatId = config.get('TELEGRAM_ADMIN_CHAT_ID', { infer: true });
   }
 
-  /**
-   * HTML-повідомлення. Помилку лише логуємо: недоставлене сповіщення не має
-   * скасовувати вже записаний платіж чи рішення адміністратора.
-   */
   async send(
     chatId: number | bigint,
     html: string,
@@ -44,12 +39,11 @@ export class TelegramSender {
     return this.send(this.adminChatId, html, buttons);
   }
 
-  /** Меню команд в особистих чатах. Не критично для роботи, тому помилку лише логуємо. */
-  async registerCommands(commands: BotCommand[]): Promise<void> {
+  async registerCommands(commands: BotCommand[], scope: BotCommandScope): Promise<void> {
     try {
-      await this.bot.telegram.setMyCommands(commands, { scope: { type: 'all_private_chats' } });
+      await this.bot.telegram.setMyCommands(commands, { scope });
     } catch (error) {
-      this.logger.warn('Failed to register bot commands', error);
+      this.logger.warn(`Failed to register bot commands for ${scope.type}`, error);
     }
   }
 }

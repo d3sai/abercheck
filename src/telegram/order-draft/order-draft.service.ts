@@ -26,7 +26,6 @@ interface DraftStep {
   parse: (input: string) => ParseResult;
 }
 
-/** Порядок полів — як у вихідному ТЗ: номер, клієнт, сума, курс, далі необов'язкові. */
 const STEPS: readonly DraftStep[] = [
   {
     field: 'orderNumber',
@@ -99,10 +98,6 @@ interface Draft {
 
 const cancelButton = button('Скасувати', DraftAction.Cancel);
 
-/**
- * Покрокове створення замовлення в особистому чаті з менеджером.
- * Чернетки живуть у пам'яті процесу: після перезапуску бота менеджер почне заново.
- */
 @Injectable()
 export class OrderDraftService {
   private readonly drafts = new Map<bigint, Draft>();
@@ -119,7 +114,6 @@ export class OrderDraftService {
     return this.prompt(draft);
   }
 
-  /** Відповідь на введений текст; null — активної чернетки немає. */
   async input(userId: bigint, text: string): Promise<BotReply | null> {
     const draft = this.drafts.get(userId);
     if (!draft) {
@@ -145,7 +139,6 @@ export class OrderDraftService {
     return this.advance(draft);
   }
 
-  /** Пропустити необов'язкове поле; null — пропускати нічого. */
   skip(userId: bigint): BotReply | null {
     const draft = this.drafts.get(userId);
     if (!draft || !STEPS[draft.step]?.optional) {

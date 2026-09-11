@@ -1,6 +1,3 @@
-// Модель даних бота звірки оплат (розділ 5 ТЗ).
-// Грошові суми — Decimal(14, 2): різниця рахується точно до копійки, як у 1С.
-
 generator client {
   provider     = "prisma-client"
   output       = "../src/generated/prisma"
@@ -12,12 +9,12 @@ datasource db {
 }
 
 enum OrderStatus {
-  AWAITING_PAYMENT // 🟡 Очікується оплата
-  PARTIALLY_PAID // 🔵 Часткова оплата
-  UNDERPAID // 🔴 Недоплата
-  PAID // 🟢 Оплачено повністю
-  OVERPAID // 🟠 Переплата
-  CANCELLED // ❌ Повернення / скасування
+  AWAITING_PAYMENT
+  PARTIALLY_PAID
+  UNDERPAID
+  PAID
+  OVERPAID
+  CANCELLED
 
   @@map("order_status")
 }
@@ -37,7 +34,7 @@ enum RefundType {
 }
 
 enum ManagerStatus {
-  PENDING // заявка чекає рішення адміністратора
+  PENDING
   ACTIVE
   REJECTED
 
@@ -52,8 +49,7 @@ model Manager {
   status     ManagerStatus @default(PENDING)
   createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  orders  Order[]
-  refunds Refund[]
+  orders Order[]
 
   @@map("managers")
 }
@@ -64,7 +60,6 @@ model Order {
   clientName    String      @map("client_name")
   clientPhone   String?     @map("client_phone")
   amountDue     Decimal     @map("amount_due") @db.Decimal(14, 2)
-  // Курс долара, за яким рахувалось замовлення ("44,9%" у повідомленнях менеджерів).
   exchangeRate  Decimal?    @map("exchange_rate") @db.Decimal(8, 4)
   invoiceNumber String?     @map("invoice_number")
   requisites    String?
@@ -91,8 +86,6 @@ model Payment {
   receivingAccount      String?   @map("receiving_account")
   purposeText           String?   @map("purpose_text")
   paidAt                DateTime  @map("paid_at") @db.Timestamptz(3)
-  // Номер замовлення, який передав сервіс-джерело. Зберігаємо навіть тоді, коли
-  // замовлення не знайдено (order_id = null), щоб адміністратор бачив його при ручній прив'язці.
   reportedOrderNumber   String?   @map("reported_order_number")
   orderId               Int?      @map("order_id")
   matchType             MatchType @map("match_type")
@@ -106,16 +99,16 @@ model Payment {
 }
 
 model Refund {
-  id            Int        @id @default(autoincrement())
-  orderId       Int        @map("order_id")
-  amount        Decimal    @db.Decimal(14, 2)
-  type          RefundType
-  initiatedById Int        @map("initiated_by")
-  note          String?
-  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  id                    Int        @id @default(autoincrement())
+  orderId               Int        @map("order_id")
+  amount                Decimal    @db.Decimal(14, 2)
+  type                  RefundType
+  initiatedByTelegramId BigInt     @map("initiated_by_telegram_id")
+  initiatedByName       String     @map("initiated_by_name")
+  note                  String?
+  createdAt             DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  order       Order   @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  initiatedBy Manager @relation(fields: [initiatedById], references: [id], onDelete: Restrict)
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
   @@index([orderId])
   @@map("refunds")

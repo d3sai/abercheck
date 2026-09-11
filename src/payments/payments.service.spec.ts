@@ -3,7 +3,9 @@ import { Test } from '@nestjs/testing';
 import { MatchType, OrderStatus, Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreatePaymentDto } from './dto/create-payment.dto';
+import { OrderCancelledError, OrderNotFoundError } from '../orders/orders.errors';
 import { PaymentEvents } from './payment-ingestion.types';
+import { PaymentAlreadyAttachedError, PaymentNotFoundError } from './payments.errors';
 import { PaymentsService } from './payments.service';
 
 describe('PaymentsService', () => {
@@ -26,7 +28,8 @@ describe('PaymentsService', () => {
   const tx = {
     $queryRaw: jest.fn(),
     order: { findUnique: jest.fn(), update: jest.fn() },
-    payment: { create: jest.fn(), aggregate: jest.fn() },
+    payment: { create: jest.fn(), aggregate: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+    refund: { aggregate: jest.fn() },
   };
   const prisma = {
     payment: { findUnique: jest.fn() },
@@ -55,6 +58,7 @@ describe('PaymentsService', () => {
     tx.order.findUnique.mockResolvedValue(order);
     tx.payment.create.mockImplementation(({ data }: { data: object }) => ({ id: 1, ...data }));
     tx.order.update.mockImplementation(({ data }: { data: object }) => ({ ...order, ...data }));
+    tx.refund.aggregate.mockResolvedValue({ _sum: { amount: null } });
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -144,5 +148,67 @@ describe('PaymentsService', () => {
     prisma.$transaction.mockRejectedValueOnce(error);
 
     await expect(service.ingest(dto)).rejects.toBe(error);
+  });
+
+  it('should count paid money net of refunds', async () => {
+    tx.order.findUnique.mockResolvedValue({ ...order, status: OrderStatus.OVERPAID });
+    paidSoFar('6208.41');
+    tx.refund.aggregate.mockResolvedValue({ _sum: { amount: new Prisma.Decimal('50') } });
+
+    const result = await service.ingest(dto);
+
+    expect(result).toMatchObject({ kind: 'recorded', order: { status: OrderStatus.PAID } });
+  });
+
+  describe('attach', () => {
+    const unmatched = { id: 15, orderId: null, amount: new Prisma.Decimal('2544.09') };
+
+    beforeEach(() => {
+      tx.payment.findUnique.mockResolvedValue(unmatched);
+      tx.payment.update.mockImplementation(({ data }: { data: object }) => ({
+        ...unmatched,
+        ...data,
+      }));
+    });
+
+    it('should attach an unknown payment and recalculate the order', async () => {
+      paidSoFar('2544.09');
+
+      const result = await service.attach(15, '№Т 0000-066717');
+
+      expect(tx.payment.update).toHaveBeenCalledWith({
+        where: { id: 15 },
+        data: { orderId: order.id },
+      });
+      expect(result).toMatchObject({
+        kind: 'recorded',
+        order: { status: OrderStatus.PARTIALLY_PAID },
+      });
+      expect(events.emit).toHaveBeenCalledWith(PaymentEvents.Recorded, result);
+    });
+
+    it('should refuse a payment that is already attached', async () => {
+      tx.payment.findUnique.mockResolvedValue({ ...unmatched, orderId: 3 });
+
+      await expect(service.attach(15, '0000-066717')).rejects.toBeInstanceOf(
+        PaymentAlreadyAttachedError,
+      );
+      expect(events.emit).not.toHaveBeenCalled();
+    });
+
+    it('should refuse an unknown payment id', async () => {
+      tx.$queryRaw.mockResolvedValueOnce([]);
+
+      await expect(service.attach(99, '0000-066717')).rejects.toBeInstanceOf(PaymentNotFoundError);
+    });
+
+    it('should refuse an order that does not exist or is cancelled', async () => {
+      tx.$queryRaw.mockResolvedValueOnce([{ id: 15 }]).mockResolvedValueOnce([]);
+      await expect(service.attach(15, '0000-000000')).rejects.toBeInstanceOf(OrderNotFoundError);
+
+      tx.order.findUnique.mockResolvedValue({ ...order, status: OrderStatus.CANCELLED });
+      await expect(service.attach(15, '0000-066717')).rejects.toBeInstanceOf(OrderCancelledError);
+      expect(tx.payment.update).not.toHaveBeenCalled();
+    });
   });
 });

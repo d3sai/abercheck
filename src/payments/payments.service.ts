@@ -1,8 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { MatchType, type Order, type Payment, Prisma } from '../generated/prisma/client';
+import {
+  MatchType,
+  type Order,
+  OrderStatus,
+  type Payment,
+  Prisma,
+} from '../generated/prisma/client';
+import { lockOrderByNumber, netPaid } from '../orders/order-ledger';
 import { normalizeOrderNumber } from '../orders/order-number';
 import { calculateOrderStatus } from '../orders/order-status';
+import { OrderCancelledError, OrderNotFoundError } from '../orders/orders.errors';
 import { isUniqueViolation } from '../prisma/prisma-errors';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreatePaymentDto } from './dto/create-payment.dto';
@@ -12,6 +20,7 @@ import {
   type PaymentRecorded,
   type PaymentUnmatched,
 } from './payment-ingestion.types';
+import { PaymentAlreadyAttachedError, PaymentNotFoundError } from './payments.errors';
 
 @Injectable()
 export class PaymentsService {
@@ -20,7 +29,6 @@ export class PaymentsService {
     private readonly events: EventEmitter2,
   ) {}
 
-  /** Приймає платіж від сервіса-джерела: запис, перерахунок статусу, подія для сповіщення. */
   async ingest(dto: CreatePaymentDto): Promise<IngestionResult> {
     const existing = await this.findByExternalId(dto.external_transaction_id);
     if (existing) {
@@ -31,7 +39,6 @@ export class PaymentsService {
     try {
       result = await this.prisma.$transaction((tx) => this.record(tx, dto));
     } catch (error) {
-      // Паралельний запит із тією самою транзакцією встиг першим — unique constraint спрацював.
       const duplicate = isUniqueViolation(error)
         ? await this.findByExternalId(dto.external_transaction_id)
         : null;
@@ -48,13 +55,59 @@ export class PaymentsService {
     return result;
   }
 
+  async attach(paymentId: number, orderNumber: string): Promise<PaymentRecorded> {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ id: number }[]>`
+        SELECT id FROM payments WHERE id = ${paymentId} FOR UPDATE`;
+      const payment =
+        locked.length > 0 ? await tx.payment.findUnique({ where: { id: paymentId } }) : null;
+      if (!payment) {
+        throw new PaymentNotFoundError(paymentId);
+      }
+      if (payment.orderId !== null) {
+        throw new PaymentAlreadyAttachedError(paymentId);
+      }
+
+      const number = normalizeOrderNumber(orderNumber);
+      const order = await lockOrderByNumber(tx, number);
+      if (!order) {
+        throw new OrderNotFoundError(number);
+      }
+      if (order.status === OrderStatus.CANCELLED) {
+        throw new OrderCancelledError(number);
+      }
+
+      const attached = await tx.payment.update({
+        where: { id: paymentId },
+        data: { orderId: order.id },
+      });
+      return this.applyToOrder(tx, attached, order);
+    });
+
+    this.events.emit(PaymentEvents.Recorded, result);
+    return result;
+  }
+
+  findById(id: number): Promise<Payment | null> {
+    return this.prisma.payment.findUnique({ where: { id } });
+  }
+
+  async findUnmatched(limit: number): Promise<{ payments: Payment[]; total: number }> {
+    const where = { orderId: null };
+    const [payments, total] = await Promise.all([
+      this.prisma.payment.findMany({ where, orderBy: { paidAt: 'desc' }, take: limit }),
+      this.prisma.payment.count({ where }),
+    ]);
+    return { payments, total };
+  }
+
   private async record(
     tx: Prisma.TransactionClient,
     dto: CreatePaymentDto,
   ): Promise<PaymentRecorded | PaymentUnmatched> {
     const reportedOrderNumber = dto.order_number ?? null;
     const order = reportedOrderNumber
-      ? await this.lockOrder(tx, normalizeOrderNumber(reportedOrderNumber))
+      ? await lockOrderByNumber(tx, normalizeOrderNumber(reportedOrderNumber))
       : null;
 
     const payment = await tx.payment.create({
@@ -70,15 +123,15 @@ export class PaymentsService {
         matchType: order ? MatchType.MATCHED_BY_PROVIDER : MatchType.MANUAL,
       },
     });
-    if (!order) {
-      return { kind: 'unmatched', payment };
-    }
+    return order ? this.applyToOrder(tx, payment, order) : { kind: 'unmatched', payment };
+  }
 
-    const { _sum } = await tx.payment.aggregate({
-      where: { orderId: order.id },
-      _sum: { amount: true },
-    });
-    const amountPaid = _sum.amount ?? new Prisma.Decimal(0);
+  private async applyToOrder(
+    tx: Prisma.TransactionClient,
+    payment: Payment,
+    order: Order,
+  ): Promise<PaymentRecorded> {
+    const amountPaid = await netPaid(tx, order.id);
     const status = calculateOrderStatus(order.amountDue, amountPaid, order.status);
     const updated =
       status === order.status
@@ -86,21 +139,6 @@ export class PaymentsService {
         : await tx.order.update({ where: { id: order.id }, data: { status } });
 
     return { kind: 'recorded', payment, order: updated, previousStatus: order.status, amountPaid };
-  }
-
-  /**
-   * Блокує рядок замовлення до кінця транзакції. Два перекази на одне замовлення
-   * (ФОП + ТОВ з різницею в секунди) обробляються по черзі, і кожен рахує суму
-   * з урахуванням попереднього — без цього обидва побачили б лише свій платіж.
-   */
-  private async lockOrder(
-    tx: Prisma.TransactionClient,
-    orderNumber: string,
-  ): Promise<Order | null> {
-    const rows = await tx.$queryRaw<{ id: number }[]>`
-      SELECT id FROM orders WHERE order_number = ${orderNumber} FOR UPDATE`;
-    const id = rows[0]?.id;
-    return id === undefined ? null : tx.order.findUnique({ where: { id } });
   }
 
   private findByExternalId(externalTransactionId: string): Promise<Payment | null> {

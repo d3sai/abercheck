@@ -3,10 +3,8 @@ import { IsISO8601, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 
 import { MONEY_PATTERN } from '../../common/money';
 import { Trim } from '../../common/trim.decorator';
 
-/** ISO 8601 з явним часовим поясом — інакше час платежу залежав би від TZ сервера. */
 const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})$/;
 
-/** Тіло POST /api/payments — платіж, який сервіс-джерело вже прив'язав до замовлення. */
 export class CreatePaymentDto {
   @Trim()
   @IsString()
@@ -14,7 +12,6 @@ export class CreatePaymentDto {
   @MaxLength(128)
   external_transaction_id!: string;
 
-  /** Номер 1С; null або відсутній, якщо сервіс не зміг визначити замовлення. */
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim() || null : value,
   )
@@ -23,7 +20,6 @@ export class CreatePaymentDto {
   @MaxLength(128)
   order_number?: string | null;
 
-  /** Рядок ("3614.32") або число; більше двох знаків після крапки не приймаємо. */
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : value,
   )
@@ -36,7 +32,6 @@ export class CreatePaymentDto {
   @MaxLength(255)
   payer_name!: string;
 
-  /** Отримувач коштів: "ФОП Гук В.С", "ТОВ Абертайм" або IBAN. */
   @Trim()
   @IsString()
   @IsNotEmpty()

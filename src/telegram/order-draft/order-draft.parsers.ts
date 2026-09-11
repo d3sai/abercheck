@@ -7,16 +7,11 @@ export type ParseResult = { ok: true; value: string } | { ok: false; error: stri
 const ok = (value: string): ParseResult => ({ ok: true, value });
 const fail = (error: string): ParseResult => ({ ok: false, error });
 
-/** Номер 1С; літеру-префікс ("№А 0000-066717") відкидаємо. */
 export function parseOrderNumber(input: string): ParseResult {
   const value = normalizeOrderNumber(input);
   return /^\d{4}-\d{6}$/.test(value) ? ok(value) : fail('Номер має бути у форматі 0000-066717.');
 }
 
-/**
- * Число так, як його пишуть менеджери: "6 158,41 грн", "17675", "1 197.2".
- * Крапка й кома водночас ("6.158,41") — неоднозначно, таке відхиляємо.
- */
 function parseDecimal(input: string, suffix: RegExp): string | null {
   const compact = input.replace(suffix, '').replace(/[\s\u00a0\u202f]/g, '');
   if (compact.includes(',') && compact.includes('.')) {

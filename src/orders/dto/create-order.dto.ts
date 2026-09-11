@@ -2,10 +2,8 @@ import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-vali
 import { MONEY_PATTERN } from '../../common/money';
 import { Trim } from '../../common/trim.decorator';
 
-/** Додатний курс, що вміщується в Decimal(8, 4). */
 export const EXCHANGE_RATE_PATTERN = /^(?!0+(\.0+)?$)\d{1,4}(\.\d{1,4})?$/;
 
-/** Дані замовлення, які менеджер вводить у боті. */
 export class CreateOrderDto {
   @Trim()
   @IsString()
@@ -25,12 +23,10 @@ export class CreateOrderDto {
   @MaxLength(32)
   clientPhone?: string;
 
-  /** Рядком, щоб не втрачати точність: "1250.50". */
   @Trim()
   @Matches(MONEY_PATTERN, { message: 'amountDue must be a positive amount with up to 2 decimals' })
   amountDue!: string;
 
-  /** Курс долара на момент оформлення: "44.9". */
   @Trim()
   @IsOptional()
   @Matches(EXCHANGE_RATE_PATTERN, {

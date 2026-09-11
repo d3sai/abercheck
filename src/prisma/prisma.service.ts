@@ -15,8 +15,6 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   async onModuleInit(): Promise<void> {
-    // З драйвер-адаптером $connect() лінивий — реальний запит гарантує,
-    // що застосунок не стартує без доступної БД.
     await this.$queryRaw`SELECT 1`;
   }
 

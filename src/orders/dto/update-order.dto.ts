@@ -1,10 +1,6 @@
 import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { Trim } from '../../common/trim.decorator';
 
-/**
- * Редагування довідкових полів замовлення. Сума до оплати тут свідомо відсутня:
- * її зміна вимагає перерахунку статусу, який з'явиться разом зі Status Calculator.
- */
 export class UpdateOrderDto {
   @Trim()
   @IsOptional()
