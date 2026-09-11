@@ -1,9 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { MatchType, OrderStatus, Prisma } from '../../generated/prisma/client';
-import type { PaymentRecorded } from '../../payments/payment-ingestion.types';
-import { PrismaService } from '../../prisma/prisma.service';
-import { TelegramSender } from '../telegram-sender';
-import { PaymentNotifier } from './payment-notifier';
+import { MatchType, OrderStatus, Prisma } from '../../../src/generated/prisma/client';
+import type { PaymentRecorded } from '../../../src/payments/payment-ingestion.types';
+import { PrismaService } from '../../../src/prisma/prisma.service';
+import { TelegramSender } from '../../../src/telegram/telegram-sender';
+import { PaymentNotifier } from '../../../src/telegram/notifications/payment-notifier';
 
 describe('PaymentNotifier', () => {
   const prisma = {

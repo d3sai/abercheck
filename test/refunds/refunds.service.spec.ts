@@ -1,11 +1,15 @@
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test } from '@nestjs/testing';
-import { OrderStatus, Prisma, RefundType } from '../generated/prisma/client';
-import { OrderCancelledError, OrderNotFoundError } from '../orders/orders.errors';
-import { PrismaService } from '../prisma/prisma.service';
-import { RefundEvents } from './refund.events';
-import { NothingToRefundError, OrderHasPaymentsError, RefundAmountError } from './refunds.errors';
-import { RefundsService } from './refunds.service';
+import { OrderStatus, Prisma, RefundType } from '../../src/generated/prisma/client';
+import { OrderCancelledError, OrderNotFoundError } from '../../src/orders/orders.errors';
+import { PrismaService } from '../../src/prisma/prisma.service';
+import { RefundEvents } from '../../src/refunds/refund.events';
+import {
+  NothingToRefundError,
+  OrderHasPaymentsError,
+  RefundAmountError,
+} from '../../src/refunds/refunds.errors';
+import { RefundsService } from '../../src/refunds/refunds.service';
 
 const d = (value: string) => new Prisma.Decimal(value);
 

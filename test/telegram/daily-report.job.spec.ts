@@ -1,8 +1,8 @@
 import { Test } from '@nestjs/testing';
-import { Prisma } from '../generated/prisma/client';
-import { DailyReportService } from '../reports/daily-report.service';
-import { DailyReportJob } from './daily-report.job';
-import { TelegramSender } from './telegram-sender';
+import { Prisma } from '../../src/generated/prisma/client';
+import { DailyReportService } from '../../src/reports/daily-report.service';
+import { DailyReportJob } from '../../src/telegram/daily-report.job';
+import { TelegramSender } from '../../src/telegram/telegram-sender';
 
 describe('DailyReportJob', () => {
   const reports = { markUnderpaid: jest.fn(), build: jest.fn() };

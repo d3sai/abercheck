@@ -1,8 +1,8 @@
 import { Test } from '@nestjs/testing';
-import { OrderStatus, Prisma } from '../generated/prisma/client';
-import { OrdersService } from '../orders/orders.service';
-import { PrismaService } from '../prisma/prisma.service';
-import { DailyReportService } from './daily-report.service';
+import { OrderStatus, Prisma } from '../../src/generated/prisma/client';
+import { OrdersService } from '../../src/orders/orders.service';
+import { PrismaService } from '../../src/prisma/prisma.service';
+import { DailyReportService } from '../../src/reports/daily-report.service';
 
 const d = (value: string) => new Prisma.Decimal(value);
 

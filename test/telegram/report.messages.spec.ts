@@ -1,7 +1,7 @@
-import { OrderStatus, Prisma } from '../generated/prisma/client';
-import type { OrderWithManager, OrderWithPaid } from '../orders/orders.service';
-import type { DailyReport } from '../reports/daily-report.service';
-import { dailyReportMessage, underpaidMessage } from './report.messages';
+import { OrderStatus, Prisma } from '../../src/generated/prisma/client';
+import type { OrderWithManager, OrderWithPaid } from '../../src/orders/orders.service';
+import type { DailyReport } from '../../src/reports/daily-report.service';
+import { dailyReportMessage, underpaidMessage } from '../../src/telegram/report.messages';
 
 const d = (value: string) => new Prisma.Decimal(value);
 

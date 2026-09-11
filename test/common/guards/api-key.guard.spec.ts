@@ -1,7 +1,7 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
-import type { EnvironmentVariables } from '../../config/env.validation';
-import { ApiKeyGuard } from './api-key.guard';
+import type { EnvironmentVariables } from '../../../src/config/env.validation';
+import { ApiKeyGuard } from '../../../src/common/guards/api-key.guard';
 
 const KEY = 'k'.repeat(32);
 

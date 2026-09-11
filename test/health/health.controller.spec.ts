@@ -1,7 +1,7 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { PrismaService } from '../prisma/prisma.service';
-import { HealthController } from './health.controller';
+import { PrismaService } from '../../src/prisma/prisma.service';
+import { HealthController } from '../../src/health/health.controller';
 
 describe('HealthController', () => {
   const prisma = { $queryRaw: jest.fn() };

@@ -1,4 +1,4 @@
-import { listenTarget, NodeEnv, validateEnv } from './env.validation';
+import { listenTarget, NodeEnv, validateEnv } from '../../src/config/env.validation';
 
 describe('validateEnv', () => {
   const valid = {

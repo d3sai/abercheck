@@ -5,14 +5,14 @@ import {
   OrderStatus,
   type Payment,
   Prisma,
-} from '../../generated/prisma/client';
+} from '../../../src/generated/prisma/client';
 import {
   adminPaymentMessage,
   managerPaymentMessage,
   needsAdminAttention,
   type PaymentNotice,
   unknownPaymentMessage,
-} from './payment-templates';
+} from '../../../src/telegram/notifications/payment-templates';
 
 const d = (value: string) => new Prisma.Decimal(value);
 

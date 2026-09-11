@@ -1,4 +1,4 @@
-import { normalizeOrderNumber } from './order-number';
+import { normalizeOrderNumber } from '../../src/orders/order-number';
 
 describe('normalizeOrderNumber', () => {
   it.each([

@@ -1,12 +1,15 @@
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test } from '@nestjs/testing';
-import { MatchType, OrderStatus, Prisma } from '../generated/prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
-import type { CreatePaymentDto } from './dto/create-payment.dto';
-import { OrderCancelledError, OrderNotFoundError } from '../orders/orders.errors';
-import { PaymentEvents } from './payment-ingestion.types';
-import { PaymentAlreadyAttachedError, PaymentNotFoundError } from './payments.errors';
-import { PaymentsService } from './payments.service';
+import { MatchType, OrderStatus, Prisma } from '../../src/generated/prisma/client';
+import { PrismaService } from '../../src/prisma/prisma.service';
+import type { CreatePaymentDto } from '../../src/payments/dto/create-payment.dto';
+import { OrderCancelledError, OrderNotFoundError } from '../../src/orders/orders.errors';
+import { PaymentEvents } from '../../src/payments/payment-ingestion.types';
+import {
+  PaymentAlreadyAttachedError,
+  PaymentNotFoundError,
+} from '../../src/payments/payments.errors';
+import { PaymentsService } from '../../src/payments/payments.service';
 
 describe('PaymentsService', () => {
   const dto: CreatePaymentDto = {

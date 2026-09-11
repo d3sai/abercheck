@@ -1,13 +1,13 @@
 import { Test } from '@nestjs/testing';
-import { OrderStatus, Prisma } from '../../generated/prisma/client';
-import { OrderCancelledError } from '../../orders/orders.errors';
-import { OrdersService } from '../../orders/orders.service';
-import { PaymentAlreadyAttachedError } from '../../payments/payments.errors';
-import { PaymentsService } from '../../payments/payments.service';
-import { RefundAmountError } from '../../refunds/refunds.errors';
-import { RefundsService } from '../../refunds/refunds.service';
-import type { BotReply } from '../bot-reply';
-import { AdminFlowService } from './admin-flow.service';
+import { OrderStatus, Prisma } from '../../../src/generated/prisma/client';
+import { OrderCancelledError } from '../../../src/orders/orders.errors';
+import { OrdersService } from '../../../src/orders/orders.service';
+import { PaymentAlreadyAttachedError } from '../../../src/payments/payments.errors';
+import { PaymentsService } from '../../../src/payments/payments.service';
+import { RefundAmountError } from '../../../src/refunds/refunds.errors';
+import { RefundsService } from '../../../src/refunds/refunds.service';
+import type { BotReply } from '../../../src/telegram/bot-reply';
+import { AdminFlowService } from '../../../src/telegram/admin/admin-flow.service';
 
 const d = (value: string) => new Prisma.Decimal(value);
 const callbacks = (reply: BotReply) =>

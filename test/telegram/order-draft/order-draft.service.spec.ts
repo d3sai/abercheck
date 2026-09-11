@@ -1,8 +1,11 @@
 import { Test } from '@nestjs/testing';
-import { OrderNumberTakenError } from '../../orders/orders.errors';
-import { OrdersService } from '../../orders/orders.service';
-import type { BotReply } from '../bot-reply';
-import { DraftAction, OrderDraftService } from './order-draft.service';
+import { OrderNumberTakenError } from '../../../src/orders/orders.errors';
+import { OrdersService } from '../../../src/orders/orders.service';
+import type { BotReply } from '../../../src/telegram/bot-reply';
+import {
+  DraftAction,
+  OrderDraftService,
+} from '../../../src/telegram/order-draft/order-draft.service';
 
 describe('OrderDraftService', () => {
   const USER = 5000000000n;

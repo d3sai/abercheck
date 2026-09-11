@@ -1,5 +1,5 @@
-import { OrderStatus, Prisma } from '../generated/prisma/client';
-import { calculateOrderStatus } from './order-status';
+import { OrderStatus, Prisma } from '../../src/generated/prisma/client';
+import { calculateOrderStatus } from '../../src/orders/order-status';
 
 const d = (value: string) => new Prisma.Decimal(value);
 

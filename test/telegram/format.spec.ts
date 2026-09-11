@@ -1,5 +1,10 @@
-import { Prisma } from '../generated/prisma/client';
-import { escapeHtml, formatKyivDate, formatKyivDateTime, formatMoney } from './format';
+import { Prisma } from '../../src/generated/prisma/client';
+import {
+  escapeHtml,
+  formatKyivDate,
+  formatKyivDateTime,
+  formatMoney,
+} from '../../src/telegram/format';
 
 describe('formatMoney', () => {
   it.each([

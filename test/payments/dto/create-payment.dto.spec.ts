@@ -1,6 +1,6 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { CreatePaymentDto } from './create-payment.dto';
+import { CreatePaymentDto } from '../../../src/payments/dto/create-payment.dto';
 
 const toDto = (plain: Record<string, unknown>) => plainToInstance(CreatePaymentDto, plain);
 const invalidFields = (plain: Record<string, unknown>) =>

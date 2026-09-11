@@ -4,7 +4,7 @@ import {
   parseOrderNumber,
   parsePhone,
   parseText,
-} from './order-draft.parsers';
+} from '../../../src/telegram/order-draft/order-draft.parsers';
 
 const value = (result: ReturnType<typeof parseMoney>) => (result.ok ? result.value : null);
 

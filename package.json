@@ -15,10 +15,10 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "deploy": "npm ci && npm run build && npm run db:migrate:deploy",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\"",
-    "lint": "eslint \"{src,apps,libs}/**/*.ts\" --fix",
-    "lint:check": "eslint \"{src,apps,libs}/**/*.ts\"",
+    "format": "prettier --write \"{src,test}/**/*.ts\"",
+    "format:check": "prettier --check \"{src,test}/**/*.ts\"",
+    "lint": "eslint \"{src,test}/**/*.ts\" --fix",
+    "lint:check": "eslint \"{src,test}/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -33,20 +33,23 @@
       "json",
       "ts"
     ],
-    "rootDir": "src",
-    "testRegex": ".*\\.spec\\.ts$",
-    "transform": {
-      "^.+\\.ts$": "ts-jest"
-    },
-    "collectCoverageFrom": [
-      "**/*.ts",
-      "!generated/**",
-      "!main.ts"
+    "rootDir": ".",
+    "roots": [
+      "<rootDir>/test"
     ],
+    "testRegex": ".*.spec.ts$",
+    "transform": {
+      "^.+.ts$": "ts-jest"
+    },
     "setupFiles": [
       "reflect-metadata"
     ],
-    "coverageDirectory": "../coverage",
+    "collectCoverageFrom": [
+      "src/**/*.ts",
+      "!src/generated/**",
+      "!src/main.ts"
+    ],
+    "coverageDirectory": "coverage",
     "testEnvironment": "node"
   },
   "dependencies": {

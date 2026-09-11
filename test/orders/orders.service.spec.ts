@@ -1,9 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { OrderStatus, Prisma } from '../generated/prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
-import type { CreateOrderDto } from './dto/create-order.dto';
-import { OrderNotFoundError, OrderNumberTakenError } from './orders.errors';
-import { OrdersService } from './orders.service';
+import { OrderStatus, Prisma } from '../../src/generated/prisma/client';
+import { PrismaService } from '../../src/prisma/prisma.service';
+import type { CreateOrderDto } from '../../src/orders/dto/create-order.dto';
+import { OrderNotFoundError, OrderNumberTakenError } from '../../src/orders/orders.errors';
+import { OrdersService } from '../../src/orders/orders.service';
 
 const prismaError = (code: string) =>
   new Prisma.PrismaClientKnownRequestError('prisma error', { code, clientVersion: 'test' });

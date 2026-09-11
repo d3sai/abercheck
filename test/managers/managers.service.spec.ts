@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
-import { ManagerStatus } from '../generated/prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
-import { ManagersService } from './managers.service';
+import { ManagerStatus } from '../../src/generated/prisma/client';
+import { PrismaService } from '../../src/prisma/prisma.service';
+import { ManagersService } from '../../src/managers/managers.service';
 
 describe('ManagersService', () => {
   const manager = {

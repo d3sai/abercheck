@@ -1,4 +1,4 @@
-import { kyivDayStart, nextKyivDayStart, previousKyivDayStart } from './kyiv-time';
+import { kyivDayStart, nextKyivDayStart, previousKyivDayStart } from '../../src/common/kyiv-time';
 
 const iso = (date: Date) => date.toISOString();
 

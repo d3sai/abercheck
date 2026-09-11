@@ -1,6 +1,6 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { CreateOrderDto } from './create-order.dto';
+import { CreateOrderDto } from '../../../src/orders/dto/create-order.dto';
 
 const validate = (plain: Record<string, unknown>) =>
   validateSync(plainToInstance(CreateOrderDto, plain)).map((error) => error.property);

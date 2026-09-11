@@ -1,6 +1,6 @@
-import { OrderStatus, Prisma } from '../generated/prisma/client';
-import type { OrderWithManager, OrderWithPaid } from '../orders/orders.service';
-import { orderList } from './orders-list.messages';
+import { OrderStatus, Prisma } from '../../src/generated/prisma/client';
+import type { OrderWithManager, OrderWithPaid } from '../../src/orders/orders.service';
+import { orderList } from '../../src/telegram/orders-list.messages';
 
 const d = (value: string) => new Prisma.Decimal(value);
 
