@@ -1,0 +1,28 @@
+# compiled output
+/dist
+/node_modules
+
+# logs
+*.log
+
+# coverage
+/coverage
+
+# env
+.env
+
+# IDE
+/.vscode
+/.idea
+
+# agents
+/.agents
+/.claude
+
+# OS
+.DS_Store
+
+# docs
+*.md
+
+/generated/prisma
