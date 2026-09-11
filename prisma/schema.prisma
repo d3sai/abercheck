@@ -1,13 +1,115 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+enum OrderStatus {
+  AWAITING_PAYMENT
+  PARTIALLY_PAID
+  UNDERPAID
+  PAID
+  OVERPAID
+  CANCELLED
+
+  @@map("order_status")
+}
+
+enum MatchType {
+  MATCHED_BY_PROVIDER
+  MANUAL
+
+  @@map("match_type")
+}
+
+enum RefundType {
+  FULL
+  PARTIAL
+
+  @@map("refund_type")
+}
+
+enum ManagerStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+
+  @@map("manager_status")
+}
+
+model Manager {
+  id         Int           @id @default(autoincrement())
+  telegramId BigInt        @unique @map("telegram_id")
+  name       String
+  username   String?
+  status     ManagerStatus @default(PENDING)
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  orders Order[]
+
+  @@map("managers")
+}
+
+model Order {
+  id            Int         @id @default(autoincrement())
+  orderNumber   String      @unique @map("order_number")
+  clientName    String      @map("client_name")
+  clientPhone   String?     @map("client_phone")
+  amountDue     Decimal     @map("amount_due") @db.Decimal(14, 2)
+  exchangeRate  Decimal?    @map("exchange_rate") @db.Decimal(8, 4)
+  invoiceNumber String?     @map("invoice_number")
+  requisites    String?
+  comment       String?
+  status        OrderStatus @default(AWAITING_PAYMENT)
+  managerId     Int         @map("manager_id")
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  manager  Manager   @relation(fields: [managerId], references: [id], onDelete: Restrict)
+  payments Payment[]
+  refunds  Refund[]
+
+  @@index([status])
+  @@index([managerId])
+  @@map("orders")
+}
+
+model Payment {
+  id                    Int       @id @default(autoincrement())
+  externalTransactionId String    @unique @map("external_transaction_id")
+  amount                Decimal   @db.Decimal(14, 2)
+  payerName             String?   @map("payer_name")
+  receivingAccount      String?   @map("receiving_account")
+  purposeText           String?   @map("purpose_text")
+  paidAt                DateTime  @map("paid_at") @db.Timestamptz(3)
+  reportedOrderNumber   String?   @map("reported_order_number")
+  orderId               Int?      @map("order_id")
+  matchType             MatchType @map("match_type")
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([paidAt])
+  @@map("payments")
+}
+
+model Refund {
+  id                    Int        @id @default(autoincrement())
+  orderId               Int        @map("order_id")
+  amount                Decimal    @db.Decimal(14, 2)
+  type                  RefundType
+  initiatedByTelegramId BigInt     @map("initiated_by_telegram_id")
+  initiatedByName       String     @map("initiated_by_name")
+  note                  String?
+  createdAt             DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@map("refunds")
 }
