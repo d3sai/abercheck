@@ -6,9 +6,11 @@ import { ManagersModule } from '../managers/managers.module';
 import { OrdersModule } from '../orders/orders.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { RefundsModule } from '../refunds/refunds.module';
+import { ReportsModule } from '../reports/reports.module';
 import { AdminFlowService } from './admin/admin-flow.service';
 import { AdminUpdate } from './admin/admin.update';
 import { BotUpdate } from './bot.update';
+import { DailyReportJob } from './daily-report.job';
 import { PaymentNotifier } from './notifications/payment-notifier';
 import { OrderDraftService } from './order-draft/order-draft.service';
 import { OrderListService } from './order-list.service';
@@ -27,6 +29,7 @@ import { TelegramSender } from './telegram-sender';
     OrdersModule,
     PaymentsModule,
     RefundsModule,
+    ReportsModule,
   ],
   providers: [
     BotUpdate,
@@ -36,6 +39,7 @@ import { TelegramSender } from './telegram-sender';
     OrderDraftService,
     OrderListService,
     AdminFlowService,
+    DailyReportJob,
   ],
 })
 export class TelegramModule {}

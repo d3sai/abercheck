@@ -1,0 +1,32 @@
+import { kyivDayStart, nextKyivDayStart, previousKyivDayStart } from './kyiv-time';
+
+const iso = (date: Date) => date.toISOString();
+
+describe('Kyiv day boundaries', () => {
+  it('should find midnight in summer time (UTC+3)', () => {
+    expect(iso(kyivDayStart(new Date('2026-09-11T15:00:00Z')))).toBe('2026-09-10T21:00:00.000Z');
+  });
+
+  it('should find midnight in winter time (UTC+2)', () => {
+    expect(iso(kyivDayStart(new Date('2026-12-15T10:00:00Z')))).toBe('2026-12-14T22:00:00.000Z');
+  });
+
+  it('should treat the late evening UTC as the next Kyiv day', () => {
+    expect(iso(kyivDayStart(new Date('2026-09-10T21:30:00Z')))).toBe('2026-09-10T21:00:00.000Z');
+  });
+
+  it('should step over the spring DST change (23-hour day)', () => {
+    const march29 = kyivDayStart(new Date('2026-03-29T12:00:00Z'));
+
+    expect(iso(march29)).toBe('2026-03-28T22:00:00.000Z');
+    expect(iso(nextKyivDayStart(march29))).toBe('2026-03-29T21:00:00.000Z');
+  });
+
+  it('should step over the autumn DST change (25-hour day)', () => {
+    const october25 = kyivDayStart(new Date('2026-10-25T12:00:00Z'));
+
+    expect(iso(october25)).toBe('2026-10-24T21:00:00.000Z');
+    expect(iso(nextKyivDayStart(october25))).toBe('2026-10-25T22:00:00.000Z');
+    expect(iso(previousKyivDayStart(nextKyivDayStart(october25)))).toBe(iso(october25));
+  });
+});

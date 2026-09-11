@@ -1,6 +1,7 @@
 import { Action, Command, Ctx, Next, On, Update } from 'nestjs-telegraf';
 import type { Context } from 'telegraf';
 import type { BotReply } from '../bot-reply';
+import { DailyReportJob } from '../daily-report.job';
 import { type CommandContext, edit, fullName, type MatchContext, reply } from '../telegram-context';
 import { TelegramSender } from '../telegram-sender';
 import { type Admin, AdminAction, AdminFlowService } from './admin-flow.service';
@@ -9,8 +10,10 @@ export const ADMIN_HELP =
   'Команди адміністратора:\n' +
   '/list — відкриті замовлення й невідомі платежі (/list all — усі)\n' +
   '/refund 0000-066717 — повернення або скасування\n' +
-  "/attach 15 0000-066717 — прив'язати платіж #15 до замовлення\n\n" +
-  "Під кожним невідомим платежем є кнопка «Прив'язати до замовлення».";
+  "/attach 15 0000-066717 — прив'язати платіж #15 до замовлення\n" +
+  '/report — звіт за вчора (/report today — за сьогодні)\n\n' +
+  "Під кожним невідомим платежем є кнопка «Прив'язати до замовлення».\n" +
+  'Щоденний звіт приходить сюди о 09:00.';
 
 type Next = () => Promise<void>;
 
@@ -18,8 +21,16 @@ type Next = () => Promise<void>;
 export class AdminUpdate {
   constructor(
     private readonly flow: AdminFlowService,
+    private readonly reports: DailyReportJob,
     private readonly sender: TelegramSender,
   ) {}
+
+  @Command('report')
+  async report(@Ctx() ctx: CommandContext, @Next() next: Next): Promise<void> {
+    if (!this.isAdminChat(ctx)) return next();
+    const today = ctx.payload?.trim().toLowerCase() === 'today';
+    await reply(ctx, await this.reports.preview(today));
+  }
 
   @Command('refund')
   async refund(@Ctx() ctx: CommandContext, @Next() next: Next): Promise<void> {

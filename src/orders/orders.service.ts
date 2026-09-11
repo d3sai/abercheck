@@ -56,6 +56,18 @@ export class OrdersService {
     return this.findOneWithBalance({ id });
   }
 
+  async findManyWithBalance(ids: number[]): Promise<OrderWithPaid<OrderWithManager>[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const orders = await this.prisma.order.findMany({
+      where: { id: { in: ids } },
+      include: { manager: true },
+      orderBy: { orderNumber: 'asc' },
+    });
+    return this.withBalances(orders);
+  }
+
   async list(
     { managerId, statuses }: OrderFilter,
     limit: number,

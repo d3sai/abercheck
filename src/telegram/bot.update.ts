@@ -53,6 +53,7 @@ export class BotUpdate implements OnApplicationBootstrap {
         { command: 'list', description: 'Відкриті замовлення й невідомі платежі' },
         { command: 'refund', description: 'Повернення або скасування: /refund 0000-066717' },
         { command: 'attach', description: "Прив'язати платіж: /attach 15 0000-066717" },
+        { command: 'report', description: 'Звіт за вчора (/report today — за сьогодні)' },
         { command: 'help', description: 'Команди адміністратора' },
       ],
       { type: 'chat', chat_id: this.sender.adminChatId },
