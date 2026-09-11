@@ -1,5 +1,14 @@
 import { plainToInstance, Type } from 'class-transformer';
-import { IsEnum, IsInt, Matches, Max, Min, validateSync } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsString,
+  Matches,
+  Max,
+  Min,
+  MinLength,
+  validateSync,
+} from 'class-validator';
 
 export enum NodeEnv {
   Development = 'development',
@@ -21,6 +30,11 @@ export class EnvironmentVariables {
     message: 'DATABASE_URL must be a PostgreSQL connection string',
   })
   DATABASE_URL!: string;
+
+  /** Ключ, з яким сервіс-джерело платежів викликає наш API (заголовок X-API-Key). */
+  @IsString()
+  @MinLength(32)
+  EXTERNAL_API_KEY!: string;
 }
 
 /** Перевіряє env на старті — застосунок не підніметься з неповною конфігурацією. */

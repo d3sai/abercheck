@@ -15,6 +15,7 @@ describe('OrdersService', () => {
     findMany: jest.fn(),
     update: jest.fn(),
   };
+  const payment = { groupBy: jest.fn() };
   let service: OrdersService;
 
   const dto: CreateOrderDto = {
@@ -25,7 +26,7 @@ describe('OrdersService', () => {
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
-      providers: [OrdersService, { provide: PrismaService, useValue: { order } }],
+      providers: [OrdersService, { provide: PrismaService, useValue: { order, payment } }],
     }).compile();
 
     service = moduleRef.get(OrdersService);
@@ -40,6 +41,16 @@ describe('OrdersService', () => {
       await service.create(7, dto);
 
       expect(order.create).toHaveBeenCalledWith({ data: { ...dto, managerId: 7 } });
+    });
+
+    it('should store the order number in the canonical 1C format', async () => {
+      order.create.mockResolvedValue({ id: 1 });
+
+      await service.create(7, { ...dto, orderNumber: '№А 0000-066717' });
+
+      expect(order.create).toHaveBeenCalledWith({
+        data: { ...dto, orderNumber: '0000-066717', managerId: 7 },
+      });
     });
 
     it('should throw OrderNumberTakenError when the order number already exists', async () => {
@@ -80,6 +91,30 @@ describe('OrdersService', () => {
         where: { managerId: undefined, status: undefined },
         orderBy: { createdAt: 'desc' },
       });
+    });
+  });
+
+  describe('findUnpaid', () => {
+    it('should attach the paid amount to each unpaid order', async () => {
+      order.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+      payment.groupBy.mockResolvedValue([
+        { orderId: 1, _sum: { amount: new Prisma.Decimal('3614.32') } },
+      ]);
+
+      const result = await service.findUnpaid();
+
+      expect(order.findMany).toHaveBeenCalledWith({
+        where: { status: { in: ['AWAITING_PAYMENT', 'PARTIALLY_PAID', 'UNDERPAID'] } },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(result.map((item) => item.amountPaid.toFixed(2))).toEqual(['3614.32', '0.00']);
+    });
+
+    it('should skip the payments query when nothing is unpaid', async () => {
+      order.findMany.mockResolvedValue([]);
+
+      await expect(service.findUnpaid()).resolves.toEqual([]);
+      expect(payment.groupBy).not.toHaveBeenCalled();
     });
   });
 
