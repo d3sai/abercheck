@@ -1,0 +1,108 @@
+import { Test } from '@nestjs/testing';
+import { MatchType, OrderStatus, Prisma } from '../../generated/prisma/client';
+import type { PaymentRecorded } from '../../payments/payment-ingestion.types';
+import { PrismaService } from '../../prisma/prisma.service';
+import { TelegramSender } from '../telegram-sender';
+import { PaymentNotifier } from './payment-notifier';
+
+describe('PaymentNotifier', () => {
+  const prisma = {
+    manager: { findUniqueOrThrow: jest.fn() },
+    payment: { findMany: jest.fn() },
+  };
+  const sender = { send: jest.fn(), sendToAdmins: jest.fn() };
+  let notifier: PaymentNotifier;
+
+  const payment = {
+    id: 5,
+    externalTransactionId: 'tx-5',
+    amount: new Prisma.Decimal('3614.32'),
+    payerName: 'Платник',
+    receivingAccount: 'ФОП Гук В.С',
+    purposeText: '',
+    paidAt: new Date('2026-09-03T12:00:00Z'),
+    reportedOrderNumber: '0000-066717',
+    orderId: 1,
+    matchType: MatchType.MATCHED_BY_PROVIDER,
+    createdAt: new Date(),
+  };
+  const event = (status: OrderStatus, amountPaid = '3614.32'): PaymentRecorded => ({
+    kind: 'recorded',
+    payment,
+    previousStatus: OrderStatus.AWAITING_PAYMENT,
+    amountPaid: new Prisma.Decimal(amountPaid),
+    order: {
+      id: 1,
+      orderNumber: '0000-066717',
+      clientName: 'Клієнт',
+      clientPhone: null,
+      amountDue: new Prisma.Decimal('3000'),
+      exchangeRate: null,
+      invoiceNumber: null,
+      requisites: null,
+      comment: null,
+      status,
+      managerId: 7,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  });
+
+  beforeEach(async () => {
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PaymentNotifier,
+        { provide: PrismaService, useValue: prisma },
+        { provide: TelegramSender, useValue: sender },
+      ],
+    }).compile();
+
+    notifier = moduleRef.get(PaymentNotifier);
+    prisma.manager.findUniqueOrThrow.mockResolvedValue({
+      id: 7,
+      telegramId: 5000000000n,
+      name: 'Христина',
+    });
+    prisma.payment.findMany.mockResolvedValue([payment]);
+  });
+
+  afterEach(() => jest.resetAllMocks());
+
+  it('should notify only the manager about a regular payment', async () => {
+    await notifier.onRecorded(event(OrderStatus.PARTIALLY_PAID, '1000'));
+
+    expect(sender.send).toHaveBeenCalledWith(
+      5000000000n,
+      expect.stringContaining('часткову оплату'),
+    );
+    expect(sender.sendToAdmins).not.toHaveBeenCalled();
+  });
+
+  it('should describe the order as of this payment, not later ones', async () => {
+    await notifier.onRecorded(event(OrderStatus.PAID));
+
+    expect(prisma.payment.findMany).toHaveBeenCalledWith({
+      where: { orderId: 1, id: { lte: 5 } },
+      orderBy: [{ paidAt: 'asc' }, { id: 'asc' }],
+    });
+  });
+
+  it('should also alert admins about an overpayment', async () => {
+    await notifier.onRecorded(event(OrderStatus.OVERPAID));
+
+    expect(sender.send).toHaveBeenCalledWith(5000000000n, expect.stringContaining('переплату'));
+    expect(sender.sendToAdmins).toHaveBeenCalledWith(expect.stringContaining('Менеджер: Христина'));
+  });
+
+  it('should swallow errors so the payment flow is not affected', async () => {
+    prisma.manager.findUniqueOrThrow.mockRejectedValue(new Error('db down'));
+
+    await expect(notifier.onRecorded(event(OrderStatus.PAID))).resolves.toBeUndefined();
+  });
+
+  it('should send unknown payments to the admin chat', async () => {
+    await notifier.onUnmatched({ kind: 'unmatched', payment: { ...payment, orderId: null } });
+
+    expect(sender.sendToAdmins).toHaveBeenCalledWith(expect.stringContaining('Невідомий платіж'));
+  });
+});

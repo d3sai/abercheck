@@ -35,6 +35,17 @@ export class EnvironmentVariables {
   @IsString()
   @MinLength(32)
   EXTERNAL_API_KEY!: string;
+
+  /** Токен від @BotFather. */
+  @Matches(/^\d+:[\w-]{30,}$/, {
+    message: 'TELEGRAM_BOT_TOKEN must be a token issued by @BotFather',
+  })
+  TELEGRAM_BOT_TOKEN!: string;
+
+  /** Чат адміністраторів: невідомі платежі, переплати, заявки менеджерів. Для групи — від'ємний. */
+  @Type(() => Number)
+  @IsInt()
+  TELEGRAM_ADMIN_CHAT_ID!: number;
 }
 
 /** Перевіряє env на старті — застосунок не підніметься з неповною конфігурацією. */

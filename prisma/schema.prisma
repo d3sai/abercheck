@@ -36,11 +36,21 @@ enum RefundType {
   @@map("refund_type")
 }
 
+enum ManagerStatus {
+  PENDING // заявка чекає рішення адміністратора
+  ACTIVE
+  REJECTED
+
+  @@map("manager_status")
+}
+
 model Manager {
-  id         Int      @id @default(autoincrement())
-  telegramId BigInt   @unique @map("telegram_id")
+  id         Int           @id @default(autoincrement())
+  telegramId BigInt        @unique @map("telegram_id")
   name       String
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  username   String?
+  status     ManagerStatus @default(PENDING)
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
 
   orders  Order[]
   refunds Refund[]

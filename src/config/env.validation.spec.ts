@@ -4,6 +4,8 @@ describe('validateEnv', () => {
   const valid = {
     DATABASE_URL: 'postgresql://user:pass@db.example.com:5432/app?schema=public',
     EXTERNAL_API_KEY: 'k'.repeat(32),
+    TELEGRAM_BOT_TOKEN: `123456789:${'A'.repeat(35)}`,
+    TELEGRAM_ADMIN_CHAT_ID: '-1002286861249',
   };
 
   it('should apply defaults and convert PORT to a number', () => {
@@ -19,6 +21,16 @@ describe('validateEnv', () => {
   it('should reject a non-PostgreSQL connection string', () => {
     expect(() => validateEnv({ ...valid, DATABASE_URL: 'mysql://localhost/app' })).toThrow(
       /DATABASE_URL/,
+    );
+  });
+
+  it('should parse the admin chat id as a negative number', () => {
+    expect(validateEnv(valid).TELEGRAM_ADMIN_CHAT_ID).toBe(-1002286861249);
+  });
+
+  it('should reject a malformed bot token', () => {
+    expect(() => validateEnv({ ...valid, TELEGRAM_BOT_TOKEN: 'not-a-token' })).toThrow(
+      /TELEGRAM_BOT_TOKEN/,
     );
   });
 
