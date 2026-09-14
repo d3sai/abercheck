@@ -7,6 +7,7 @@ import { OrdersModule } from '../orders/orders.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { RefundsModule } from '../refunds/refunds.module';
 import { ReportsModule } from '../reports/reports.module';
+import { AccessNotifier } from './access/access-notifier';
 import { AdminFlowService } from './admin/admin-flow.service';
 import { AdminUpdate } from './admin/admin.update';
 import { BotLauncher } from './bot-launcher';
@@ -39,6 +40,7 @@ import { TelegramSender } from './telegram-sender';
     AdminUpdate,
     TelegramSender,
     PaymentNotifier,
+    AccessNotifier,
     OrderDraftService,
     OrderListService,
     AdminFlowService,
