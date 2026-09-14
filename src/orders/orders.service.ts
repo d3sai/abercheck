@@ -1,5 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { type Manager, type Order, type OrderStatus, Prisma } from '../generated/prisma/client';
+import {
+  type Manager,
+  type Order,
+  type OrderStatus,
+  type Payment,
+  Prisma,
+  type Refund,
+} from '../generated/prisma/client';
 import { isRecordNotFound, isUniqueViolation } from '../prisma/prisma-errors';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateOrderDto } from './dto/create-order.dto';
@@ -19,6 +26,32 @@ export interface OrderWithPaid<T extends Order = Order> {
 }
 
 export type OrderWithManager = Order & { manager: Manager };
+
+export type OrderSort = 'createdAt' | 'amountDue' | 'orderNumber';
+
+export interface OrderSearch extends OrderFilter {
+  text?: string;
+  sort: OrderSort;
+  direction: Prisma.SortOrder;
+  skip: number;
+  take: number;
+}
+
+export interface OrderLedger extends OrderWithPaid<OrderWithManager> {
+  payments: Payment[];
+  refunds: Refund[];
+}
+
+function orderBy(sort: OrderSort, direction: Prisma.SortOrder) {
+  switch (sort) {
+    case 'amountDue':
+      return [{ amountDue: direction }, { id: direction }];
+    case 'orderNumber':
+      return [{ orderNumber: direction }];
+    case 'createdAt':
+      return [{ createdAt: direction }, { id: direction }];
+  }
+}
 
 @Injectable()
 export class OrdersService {
@@ -83,6 +116,59 @@ export class OrdersService {
       this.prisma.order.count({ where }),
     ]);
     return { items: await this.withBalances(orders), total };
+  }
+
+  async search({
+    managerId,
+    statuses,
+    text,
+    sort,
+    direction,
+    skip,
+    take,
+  }: OrderSearch): Promise<{ items: OrderWithPaid<OrderWithManager>[]; total: number }> {
+    const where: Prisma.OrderWhereInput = {
+      managerId,
+      status: statuses?.length ? { in: statuses } : undefined,
+      OR: text
+        ? [
+            { orderNumber: { contains: text, mode: 'insensitive' } },
+            { clientName: { contains: text, mode: 'insensitive' } },
+            { invoiceNumber: { contains: text, mode: 'insensitive' } },
+            { clientPhone: { contains: text } },
+          ]
+        : undefined,
+    };
+    const [orders, total] = await Promise.all([
+      this.prisma.order.findMany({
+        where,
+        include: { manager: true },
+        orderBy: orderBy(sort, direction),
+        skip,
+        take,
+      }),
+      this.prisma.order.count({ where }),
+    ]);
+    return { items: await this.withBalances(orders), total };
+  }
+
+  async findLedger(orderNumber: string): Promise<OrderLedger | null> {
+    const found = await this.findWithBalance(orderNumber);
+    if (!found) {
+      return null;
+    }
+    const orderId = found.order.id;
+    const [payments, refunds] = await Promise.all([
+      this.prisma.payment.findMany({
+        where: { orderId },
+        orderBy: [{ paidAt: 'asc' }, { id: 'asc' }],
+      }),
+      this.prisma.refund.findMany({
+        where: { orderId },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      }),
+    ]);
+    return { ...found, payments, refunds };
   }
 
   async update(orderNumber: string, dto: UpdateOrderDto): Promise<Order> {
