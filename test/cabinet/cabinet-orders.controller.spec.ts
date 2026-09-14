@@ -1,0 +1,158 @@
+import { CabinetOrdersController } from '../../src/cabinet/cabinet-orders.controller';
+import type { CabinetCreateOrderDto } from '../../src/cabinet/dto/cabinet-body.dto';
+import type { OrdersQueryDto } from '../../src/cabinet/dto/cabinet-query.dto';
+import { ApiError } from '../../src/common/api-error';
+import {
+  type Manager,
+  ManagerRole,
+  ManagerStatus,
+  OrderStatus,
+  Prisma,
+} from '../../src/generated/prisma/client';
+import type { ManagersService } from '../../src/managers/managers.service';
+import { OrderNotFoundError } from '../../src/orders/orders.errors';
+import type { OrdersService } from '../../src/orders/orders.service';
+import type { RefundsService } from '../../src/refunds/refunds.service';
+
+const d = (value: string) => new Prisma.Decimal(value);
+
+async function failure(promise: Promise<unknown>): Promise<string> {
+  try {
+    await promise;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return (error.getResponse() as { code: string }).code;
+    }
+    throw error;
+  }
+  throw new Error('Expected the call to fail');
+}
+
+const ledgerOf = (managerId: number) => ({
+  order: {
+    id: 1,
+    orderNumber: '0000-066717',
+    clientName: 'Чернявський Владислав',
+    clientPhone: null,
+    invoiceNumber: null,
+    amountDue: d('6158.41'),
+    exchangeRate: null,
+    requisites: null,
+    comment: null,
+    status: OrderStatus.AWAITING_PAYMENT,
+    managerId,
+    manager: { id: managerId, name: 'Олена' },
+    createdAt: new Date('2026-09-03T12:00:00Z'),
+    updatedAt: new Date('2026-09-03T12:00:00Z'),
+  },
+  amountPaid: d('0'),
+  payments: [],
+  refunds: [],
+});
+
+describe('CabinetOrdersController', () => {
+  const orders = { search: jest.fn(), findLedger: jest.fn(), create: jest.fn(), update: jest.fn() };
+  const managers = { findById: jest.fn() };
+  const refunds = { refund: jest.fn(), cancelUnpaid: jest.fn() };
+  const controller = new CabinetOrdersController(
+    orders as unknown as OrdersService,
+    managers as unknown as ManagersService,
+    refunds as unknown as RefundsService,
+  );
+  const manager = {
+    id: 7,
+    telegramId: 5000000000n,
+    name: 'Олена',
+    role: ManagerRole.MANAGER,
+    status: ManagerStatus.ACTIVE,
+  } as Manager;
+  const admin = { ...manager, id: 1, telegramId: 111n, name: 'Уляна', role: ManagerRole.ADMIN };
+  const dto: CabinetCreateOrderDto = {
+    orderNumber: '0000-066717',
+    clientName: 'Чернявський Владислав',
+    amountDue: '6158.41',
+  };
+
+  afterEach(() => jest.resetAllMocks());
+
+  describe('list', () => {
+    const query = {
+      page: 2,
+      pageSize: 10,
+      sort: 'createdAt',
+      direction: 'desc',
+      managerId: 99,
+    } as OrdersQueryDto;
+
+    beforeEach(() => orders.search.mockResolvedValue({ items: [], total: 0 }));
+
+    it('should keep a manager to their own orders whatever the filter says', async () => {
+      await controller.list(manager, query);
+
+      expect(orders.search).toHaveBeenCalledWith(
+        expect.objectContaining({ managerId: 7, skip: 10, take: 10 }),
+      );
+    });
+
+    it('should let an admin filter by any manager', async () => {
+      await controller.list(admin, query);
+
+      expect(orders.search).toHaveBeenCalledWith(expect.objectContaining({ managerId: 99 }));
+    });
+  });
+
+  describe('detail', () => {
+    it("should report another manager's order as missing", async () => {
+      orders.findLedger.mockResolvedValue(ledgerOf(8));
+
+      await expect(controller.detail(manager, '0000-066717')).rejects.toBeInstanceOf(
+        OrderNotFoundError,
+      );
+    });
+
+    it('should show admins any order with its balance', async () => {
+      orders.findLedger.mockResolvedValue(ledgerOf(8));
+
+      await expect(controller.detail(admin, '0000-066717')).resolves.toMatchObject({
+        orderNumber: '0000-066717',
+        amountPaid: '0.00',
+        amountRemaining: '6158.41',
+        manager: { id: 8, name: 'Олена' },
+      });
+    });
+  });
+
+  describe('create', () => {
+    it('should create the order for the current manager by default', async () => {
+      orders.create.mockResolvedValue({ orderNumber: '0000-066717' });
+      orders.findLedger.mockResolvedValue(ledgerOf(7));
+
+      await controller.create(manager, dto);
+
+      expect(orders.create).toHaveBeenCalledWith(7, dto);
+    });
+
+    it('should not let a manager create orders for someone else', async () => {
+      await expect(failure(controller.create(manager, { ...dto, managerId: 8 }))).resolves.toBe(
+        'FORBIDDEN',
+      );
+      expect(orders.create).not.toHaveBeenCalled();
+    });
+
+    it('should let an admin assign an order only to an active manager', async () => {
+      managers.findById.mockResolvedValue({ id: 8, status: ManagerStatus.PENDING });
+
+      await expect(failure(controller.create(admin, { ...dto, managerId: 8 }))).resolves.toBe(
+        'MANAGER_NOT_ACTIVE',
+      );
+    });
+  });
+
+  it('should record a full refund in the name of the admin', async () => {
+    orders.findLedger.mockResolvedValue(ledgerOf(8));
+
+    await controller.refund(admin, '0000-066717', {});
+
+    expect(refunds.refund).toHaveBeenCalledWith(1, null, { telegramId: 111n, name: 'Уляна' });
+  });
+});
