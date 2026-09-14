@@ -1,4 +1,10 @@
-import { kyivDayStart, nextKyivDayStart, previousKyivDayStart } from '../../src/common/kyiv-time';
+import {
+  kyivDate,
+  kyivDayStart,
+  kyivDayStartOf,
+  nextKyivDayStart,
+  previousKyivDayStart,
+} from '../../src/common/kyiv-time';
 
 const iso = (date: Date) => date.toISOString();
 
@@ -28,5 +34,15 @@ describe('Kyiv day boundaries', () => {
     expect(iso(october25)).toBe('2026-10-24T21:00:00.000Z');
     expect(iso(nextKyivDayStart(october25))).toBe('2026-10-25T22:00:00.000Z');
     expect(iso(previousKyivDayStart(nextKyivDayStart(october25)))).toBe(iso(october25));
+  });
+
+  it('should name the Kyiv calendar date of an instant', () => {
+    expect(kyivDate(new Date('2026-09-10T21:30:00Z'))).toBe('2026-09-11');
+    expect(kyivDate(new Date('2026-09-10T20:59:00Z'))).toBe('2026-09-10');
+  });
+
+  it('should find the start of a day given as YYYY-MM-DD', () => {
+    expect(iso(kyivDayStartOf('2026-09-11'))).toBe('2026-09-10T21:00:00.000Z');
+    expect(iso(kyivDayStartOf('2026-12-15'))).toBe('2026-12-14T22:00:00.000Z');
   });
 });
