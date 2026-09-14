@@ -22,6 +22,8 @@ import {
 } from './payment-ingestion.types';
 import { PaymentAlreadyAttachedError, PaymentNotFoundError } from './payments.errors';
 
+const AMOUNT_QUERY = /^\d{1,12}([.,]\d{1,2})?$/;
+
 @Injectable()
 export class PaymentsService {
   constructor(
@@ -96,6 +98,39 @@ export class PaymentsService {
     const where = { orderId: null };
     const [payments, total] = await Promise.all([
       this.prisma.payment.findMany({ where, orderBy: { paidAt: 'desc' }, take: limit }),
+      this.prisma.payment.count({ where }),
+    ]);
+    return { payments, total };
+  }
+
+  async findUnmatchedPage({
+    text,
+    skip,
+    take,
+  }: {
+    text?: string;
+    skip: number;
+    take: number;
+  }): Promise<{ payments: Payment[]; total: number }> {
+    const amount = text && AMOUNT_QUERY.test(text) ? text.replace(',', '.') : null;
+    const where: Prisma.PaymentWhereInput = {
+      orderId: null,
+      OR: text
+        ? [
+            { payerName: { contains: text, mode: 'insensitive' } },
+            { purposeText: { contains: text, mode: 'insensitive' } },
+            { reportedOrderNumber: { contains: text } },
+            ...(amount ? [{ amount: new Prisma.Decimal(amount) }] : []),
+          ]
+        : undefined,
+    };
+    const [payments, total] = await Promise.all([
+      this.prisma.payment.findMany({
+        where,
+        orderBy: [{ paidAt: 'desc' }, { id: 'desc' }],
+        skip,
+        take,
+      }),
       this.prisma.payment.count({ where }),
     ]);
     return { payments, total };

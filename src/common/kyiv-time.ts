@@ -59,3 +59,15 @@ export function nextKyivDayStart(dayStart: Date): Date {
 export function previousKyivDayStart(dayStart: Date): Date {
   return kyivDayStart(new Date(dayStart.getTime() - DAY_MS / 2));
 }
+
+/** Kyiv calendar date of an instant, as YYYY-MM-DD. */
+export function kyivDate(date: Date): string {
+  const { year, month, day } = kyivParts(date);
+  return `${year}-${month}-${day}`;
+}
+
+/** Start of the Kyiv day named by a YYYY-MM-DD date. */
+export function kyivDayStartOf(isoDate: string): Date {
+  const [year = NaN, month = NaN, day = NaN] = isoDate.split('-').map(Number);
+  return kyivDayStart(new Date(Date.UTC(year, month - 1, day, 12)));
+}

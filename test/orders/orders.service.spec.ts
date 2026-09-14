@@ -16,8 +16,8 @@ describe('OrdersService', () => {
     count: jest.fn(),
     update: jest.fn(),
   };
-  const payment = { groupBy: jest.fn() };
-  const refund = { groupBy: jest.fn() };
+  const payment = { groupBy: jest.fn(), findMany: jest.fn() };
+  const refund = { groupBy: jest.fn(), findMany: jest.fn() };
   let service: OrdersService;
 
   const dto: CreateOrderDto = {
@@ -150,6 +150,93 @@ describe('OrdersService', () => {
       await expect(service.update('404', { comment: 'x' })).rejects.toBeInstanceOf(
         OrderNotFoundError,
       );
+    });
+  });
+
+  describe('search', () => {
+    beforeEach(() => {
+      order.findMany.mockResolvedValue([]);
+      order.count.mockResolvedValue(0);
+    });
+
+    it('should match number, client, invoice and phone within the filters', async () => {
+      await service.search({
+        managerId: 7,
+        statuses: [OrderStatus.PAID],
+        text: '0667',
+        sort: 'amountDue',
+        direction: 'asc',
+        skip: 25,
+        take: 25,
+      });
+
+      const where = {
+        managerId: 7,
+        status: { in: ['PAID'] },
+        OR: [
+          { orderNumber: { contains: '0667', mode: 'insensitive' } },
+          { clientName: { contains: '0667', mode: 'insensitive' } },
+          { invoiceNumber: { contains: '0667', mode: 'insensitive' } },
+          { clientPhone: { contains: '0667' } },
+        ],
+      };
+      expect(order.findMany).toHaveBeenCalledWith({
+        where,
+        include: { manager: true },
+        orderBy: [{ amountDue: 'asc' }, { id: 'asc' }],
+        skip: 25,
+        take: 25,
+      });
+      expect(order.count).toHaveBeenCalledWith({ where });
+    });
+
+    it('should not filter when no criteria are given', async () => {
+      await service.search({ sort: 'createdAt', direction: 'desc', skip: 0, take: 25 });
+
+      expect(order.count).toHaveBeenCalledWith({ where: {} });
+    });
+
+    it('should treat an empty status list as no status filter', async () => {
+      await service.search({
+        statuses: [],
+        sort: 'createdAt',
+        direction: 'desc',
+        skip: 0,
+        take: 25,
+      });
+
+      expect(order.count).toHaveBeenCalledWith({ where: {} });
+    });
+  });
+
+  describe('findLedger', () => {
+    it('should return the order with its payments and refunds in time order', async () => {
+      order.findUnique.mockResolvedValue({ id: 1 });
+      payment.findMany.mockResolvedValue([{ id: 10 }]);
+      refund.findMany.mockResolvedValue([{ id: 20 }]);
+
+      const ledger = await service.findLedger('0000-066717');
+
+      expect(payment.findMany).toHaveBeenCalledWith({
+        where: { orderId: 1 },
+        orderBy: [{ paidAt: 'asc' }, { id: 'asc' }],
+      });
+      expect(refund.findMany).toHaveBeenCalledWith({
+        where: { orderId: 1 },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      });
+      expect(ledger).toMatchObject({
+        order: { id: 1 },
+        payments: [{ id: 10 }],
+        refunds: [{ id: 20 }],
+      });
+    });
+
+    it('should return null for an unknown order', async () => {
+      order.findUnique.mockResolvedValue(null);
+
+      await expect(service.findLedger('0000-000000')).resolves.toBeNull();
+      expect(payment.findMany).not.toHaveBeenCalled();
     });
   });
 });
