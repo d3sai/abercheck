@@ -41,13 +41,24 @@ enum ManagerStatus {
   @@map("manager_status")
 }
 
+enum ManagerRole {
+  ADMIN
+  MANAGER
+
+  @@map("manager_role")
+}
+
 model Manager {
-  id         Int           @id @default(autoincrement())
-  telegramId BigInt        @unique @map("telegram_id")
-  name       String
-  username   String?
-  status     ManagerStatus @default(PENDING)
-  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  id             Int           @id @default(autoincrement())
+  telegramId     BigInt        @unique @map("telegram_id")
+  name           String
+  username       String?
+  status         ManagerStatus @default(PENDING)
+  role           ManagerRole   @default(MANAGER)
+  login          String?       @unique
+  passwordHash   String?       @map("password_hash")
+  sessionVersion Int           @default(0) @map("session_version")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
 
   orders Order[]
 
