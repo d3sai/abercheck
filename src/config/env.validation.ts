@@ -31,6 +31,13 @@ export class EnvironmentVariables {
   @IsString()
   HOST?: string;
 
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined,
+  )
+  @IsOptional()
+  @Matches(/^https?:\/\//, { message: 'SENTRY_DSN must be an http(s) URL' })
+  SENTRY_DSN?: string;
+
   @Matches(/^postgres(ql)?:\/\//, {
     message: 'DATABASE_URL must be a PostgreSQL connection string',
   })
