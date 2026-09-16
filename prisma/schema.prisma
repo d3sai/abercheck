@@ -80,9 +80,10 @@ model Order {
   createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  manager  Manager   @relation(fields: [managerId], references: [id], onDelete: Restrict)
-  payments Payment[]
-  refunds  Refund[]
+  manager       Manager             @relation(fields: [managerId], references: [id], onDelete: Restrict)
+  payments      Payment[]
+  refunds       Refund[]
+  amountChanges OrderAmountChange[]
 
   @@index([status])
   @@index([managerId])
@@ -123,4 +124,30 @@ model Refund {
 
   @@index([orderId])
   @@map("refunds")
+}
+
+model OrderAmountChange {
+  id                  Int      @id @default(autoincrement())
+  orderId             Int      @map("order_id")
+  previousAmountDue   Decimal  @map("previous_amount_due") @db.Decimal(14, 2)
+  newAmountDue        Decimal  @map("new_amount_due") @db.Decimal(14, 2)
+  changedByTelegramId BigInt   @map("changed_by_telegram_id")
+  changedByName       String   @map("changed_by_name")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@map("order_amount_changes")
+}
+
+/**
+ * Anti-replay for Telegram Login Widget callbacks — a hash lives here until its signed auth_date expires.
+ */
+model TelegramLoginHash {
+  hash      String   @id
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@index([expiresAt])
+  @@map("telegram_login_hashes")
 }

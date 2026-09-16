@@ -1,5 +1,7 @@
 import { Action, Command, Ctx, Next, On, Update } from 'nestjs-telegraf';
 import type { Context } from 'telegraf';
+import { ManagerRole } from '../../generated/prisma/client';
+import { ManagersService } from '../../managers/managers.service';
 import type { BotReply } from '../bot-reply';
 import { DailyReportJob } from '../daily-report.job';
 import { type CommandContext, edit, fullName, type MatchContext, reply } from '../telegram-context';
@@ -23,24 +25,25 @@ export class AdminUpdate {
     private readonly flow: AdminFlowService,
     private readonly reports: DailyReportJob,
     private readonly sender: TelegramSender,
+    private readonly managers: ManagersService,
   ) {}
 
   @Command('report')
   async report(@Ctx() ctx: CommandContext, @Next() next: Next): Promise<void> {
-    if (!this.isAdminChat(ctx)) return next();
+    if (!(await this.isAuthorizedAdmin(ctx))) return next();
     const today = ctx.payload?.trim().toLowerCase() === 'today';
     await reply(ctx, await this.reports.preview(today));
   }
 
   @Command('refund')
   async refund(@Ctx() ctx: CommandContext, @Next() next: Next): Promise<void> {
-    if (!this.isAdminChat(ctx)) return next();
+    if (!(await this.isAuthorizedAdmin(ctx))) return next();
     await reply(ctx, await this.flow.refundMenu(ctx.payload ?? ''));
   }
 
   @Command('attach')
   async attach(@Ctx() ctx: CommandContext, @Next() next: Next): Promise<void> {
-    if (!this.isAdminChat(ctx)) return next();
+    if (!(await this.isAuthorizedAdmin(ctx))) return next();
     const match = /^#?(\d+)\s+(.+)$/.exec((ctx.payload ?? '').trim());
     await reply(
       ctx,
@@ -54,7 +57,7 @@ export class AdminUpdate {
 
   @Action(AdminAction.AttachStart)
   async attachStart(@Ctx() ctx: MatchContext): Promise<void> {
-    if (!(await this.ensureAdminChat(ctx))) return;
+    if (!(await this.ensureAuthorizedAdmin(ctx))) return;
     await ctx.answerCbQuery();
     const prompt = await this.flow.attachPrompt(Number(ctx.match[1]), this.admin(ctx));
     await reply(ctx, prompt, ctx.callbackQuery?.message?.message_id);
@@ -62,7 +65,7 @@ export class AdminUpdate {
 
   @Action(AdminAction.AttachConfirm)
   async attachConfirm(@Ctx() ctx: MatchContext): Promise<void> {
-    if (!(await this.ensureAdminChat(ctx))) return;
+    if (!(await this.ensureAuthorizedAdmin(ctx))) return;
     await this.finish(
       ctx,
       await this.flow.attach(Number(ctx.match[1]), ctx.match[2]!, this.admin(ctx)),
@@ -71,20 +74,20 @@ export class AdminUpdate {
 
   @Action(AdminAction.RefundAsk)
   async refundAsk(@Ctx() ctx: MatchContext): Promise<void> {
-    if (!(await this.ensureAdminChat(ctx))) return;
+    if (!(await this.ensureAuthorizedAdmin(ctx))) return;
     await this.finish(ctx, await this.flow.refundConfirm(Number(ctx.match[1]), ctx.match[2]!));
   }
 
   @Action(AdminAction.RefundPartial)
   async refundPartial(@Ctx() ctx: MatchContext): Promise<void> {
-    if (!(await this.ensureAdminChat(ctx))) return;
+    if (!(await this.ensureAuthorizedAdmin(ctx))) return;
     await ctx.answerCbQuery();
     await reply(ctx, await this.flow.refundPrompt(Number(ctx.match[1]), this.admin(ctx)));
   }
 
   @Action(AdminAction.RefundConfirm)
   async refundConfirm(@Ctx() ctx: MatchContext): Promise<void> {
-    if (!(await this.ensureAdminChat(ctx))) return;
+    if (!(await this.ensureAuthorizedAdmin(ctx))) return;
     await this.finish(
       ctx,
       await this.flow.refund(Number(ctx.match[1]), ctx.match[2]!, this.admin(ctx)),
@@ -93,19 +96,19 @@ export class AdminUpdate {
 
   @Action(AdminAction.CancelAsk)
   async cancelAsk(@Ctx() ctx: MatchContext): Promise<void> {
-    if (!(await this.ensureAdminChat(ctx))) return;
+    if (!(await this.ensureAuthorizedAdmin(ctx))) return;
     await this.finish(ctx, await this.flow.cancelConfirm(Number(ctx.match[1])));
   }
 
   @Action(AdminAction.CancelConfirm)
   async cancelConfirm(@Ctx() ctx: MatchContext): Promise<void> {
-    if (!(await this.ensureAdminChat(ctx))) return;
+    if (!(await this.ensureAuthorizedAdmin(ctx))) return;
     await this.finish(ctx, await this.flow.cancel(Number(ctx.match[1]), this.admin(ctx)));
   }
 
   @Action(AdminAction.Dismiss)
   async dismiss(@Ctx() ctx: Context): Promise<void> {
-    if (!(await this.ensureAdminChat(ctx))) return;
+    if (!(await this.ensureAuthorizedAdmin(ctx))) return;
     await ctx.answerCbQuery();
     await edit(ctx, { html: `Скасовано · ${fullName(ctx)}` });
   }
@@ -115,10 +118,10 @@ export class AdminUpdate {
     const message = ctx.message;
     const prompt = message && 'reply_to_message' in message ? message.reply_to_message : undefined;
     if (
-      !this.isAdminChat(ctx) ||
       !ctx.text ||
       ctx.text.startsWith('/') ||
-      prompt?.from?.id !== ctx.botInfo.id
+      prompt?.from?.id !== ctx.botInfo.id ||
+      !(await this.isAuthorizedAdmin(ctx))
     ) {
       return next();
     }
@@ -146,15 +149,20 @@ export class AdminUpdate {
     return { userId: ctx.from!.id, telegramId: BigInt(ctx.from!.id), name: fullName(ctx) };
   }
 
-  private isAdminChat(ctx: Context): boolean {
-    return ctx.chat?.id === this.sender.adminChatId && ctx.from !== undefined;
+  /** Chat membership alone isn't authorization: resolve the sender to an ACTIVE ADMIN manager. */
+  private async isAuthorizedAdmin(ctx: Context): Promise<boolean> {
+    if (ctx.chat?.id !== this.sender.adminChatId || ctx.from === undefined) {
+      return false;
+    }
+    const manager = await this.managers.findActiveByTelegramId(BigInt(ctx.from.id));
+    return manager?.role === ManagerRole.ADMIN;
   }
 
-  private async ensureAdminChat(ctx: Context): Promise<boolean> {
-    if (this.isAdminChat(ctx)) {
+  private async ensureAuthorizedAdmin(ctx: Context): Promise<boolean> {
+    if (await this.isAuthorizedAdmin(ctx)) {
       return true;
     }
-    await ctx.answerCbQuery('Ця дія доступна лише в адмінському чаті.');
+    await ctx.answerCbQuery('Ця дія доступна лише активним адміністраторам.');
     return false;
   }
 }

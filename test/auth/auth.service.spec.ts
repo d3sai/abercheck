@@ -70,14 +70,14 @@ describe('AuthService', () => {
     }).compile();
 
     service = moduleRef.get(AuthService);
-    telegram.verify.mockReturnValue(true);
+    telegram.verify.mockResolvedValue(true);
   });
 
   afterEach(() => jest.resetAllMocks());
 
   describe('loginWithTelegram', () => {
     it('should reject a payload with a bad signature before touching the database', async () => {
-      telegram.verify.mockReturnValue(false);
+      telegram.verify.mockResolvedValue(false);
 
       await expect(failure(service.loginWithTelegram(telegramLogin))).resolves.toBe(
         'TELEGRAM_AUTH_INVALID',

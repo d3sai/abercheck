@@ -148,6 +148,39 @@ describe('CabinetOrdersController', () => {
     });
   });
 
+  describe('update', () => {
+    it('should not let a manager change amountDue', async () => {
+      await expect(
+        failure(controller.update(manager, '0000-066717', { amountDue: '100' })),
+      ).resolves.toBe('FORBIDDEN');
+      expect(orders.update).not.toHaveBeenCalled();
+    });
+
+    it('should let a manager edit other fields without touching amountDue', async () => {
+      orders.findLedger.mockResolvedValue(ledgerOf(7));
+
+      await controller.update(manager, '0000-066717', { comment: 'дзвонив клієнт' });
+
+      expect(orders.update).toHaveBeenCalledWith(
+        '0000-066717',
+        { comment: 'дзвонив клієнт' },
+        { telegramId: 5000000000n, name: 'Олена' },
+      );
+    });
+
+    it("should let an admin change amountDue in the admin's name", async () => {
+      orders.findLedger.mockResolvedValue(ledgerOf(8));
+
+      await controller.update(admin, '0000-066717', { amountDue: '100' });
+
+      expect(orders.update).toHaveBeenCalledWith(
+        '0000-066717',
+        { amountDue: '100' },
+        { telegramId: 111n, name: 'Уляна' },
+      );
+    });
+  });
+
   it('should record a full refund in the name of the admin', async () => {
     orders.findLedger.mockResolvedValue(ledgerOf(8));
 

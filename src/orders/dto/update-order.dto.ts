@@ -1,4 +1,5 @@
-import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { MONEY_PATTERN } from '../../common/money';
 import { Trim } from '../../common/trim.decorator';
 
 export class UpdateOrderDto {
@@ -8,6 +9,12 @@ export class UpdateOrderDto {
   @IsNotEmpty()
   @MaxLength(255)
   clientName?: string;
+
+  /** ADMIN-only — enforced by the caller, not by validation. */
+  @Trim()
+  @IsOptional()
+  @Matches(MONEY_PATTERN, { message: 'amountDue must be a positive amount with up to 2 decimals' })
+  amountDue?: string;
 
   @Trim()
   @IsOptional()

@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { EnvironmentVariables } from '../config/env.validation';
+import { isUniqueViolation } from '../prisma/prisma-errors';
+import { PrismaService } from '../prisma/prisma.service';
 import type { TelegramLoginDto } from './dto/telegram-login.dto';
 
 const MAX_AGE_SECONDS = 2 * 60;
@@ -13,16 +15,17 @@ type Field = [string, string | number];
 @Injectable()
 export class TelegramLoginVerifier {
   private readonly secret: Buffer;
-  /** Hashes of logins already accepted, until they expire anyway. In memory: one app instance. */
-  private readonly used = new Map<string, number>();
 
-  constructor(config: ConfigService<EnvironmentVariables, true>) {
+  constructor(
+    private readonly prisma: PrismaService,
+    config: ConfigService<EnvironmentVariables, true>,
+  ) {
     this.secret = createHash('sha256')
       .update(config.get('TELEGRAM_BOT_TOKEN', { infer: true }))
       .digest();
   }
 
-  verify({ hash, ...data }: TelegramLoginDto, now = Date.now()): boolean {
+  async verify({ hash, ...data }: TelegramLoginDto, now = Date.now()): Promise<boolean> {
     const age = now / 1000 - data.auth_date;
     if (age < -CLOCK_SKEW_SECONDS || age > MAX_AGE_SECONDS) {
       return false;
@@ -43,17 +46,24 @@ export class TelegramLoginVerifier {
     return this.consume(hash, (data.auth_date + MAX_AGE_SECONDS + CLOCK_SKEW_SECONDS) * 1000, now);
   }
 
-  // Each signed login works once, so a callback URL left in history or logs can't be replayed.
-  private consume(hash: string, expiresAt: number, now: number): boolean {
-    for (const [key, expiry] of this.used) {
-      if (expiry <= now) {
-        this.used.delete(key);
+  /**
+   * Each signed login works once, so a callback URL left in history or logs can't be replayed.
+   * Backed by Postgres (not process memory) so it survives a restart and works across instances.
+   */
+  private async consume(hash: string, expiresAt: number, now: number): Promise<boolean> {
+    await this.prisma.telegramLoginHash.deleteMany({
+      where: { expiresAt: { lte: new Date(now) } },
+    });
+    try {
+      await this.prisma.telegramLoginHash.create({
+        data: { hash, expiresAt: new Date(expiresAt) },
+      });
+      return true;
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return false;
       }
+      throw error;
     }
-    if (this.used.has(hash)) {
-      return false;
-    }
-    this.used.set(hash, expiresAt);
-    return true;
   }
 }

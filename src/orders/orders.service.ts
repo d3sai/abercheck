@@ -9,10 +9,12 @@ import {
 } from '../generated/prisma/client';
 import { isRecordNotFound, isUniqueViolation } from '../prisma/prisma-errors';
 import { PrismaService } from '../prisma/prisma.service';
+import type { Initiator } from '../refunds/refund.events';
 import type { CreateOrderDto } from './dto/create-order.dto';
 import type { UpdateOrderDto } from './dto/update-order.dto';
+import { lockOrderByNumber, netPaid } from './order-ledger';
 import { normalizeOrderNumber } from './order-number';
-import { UNPAID_STATUSES } from './order-status';
+import { calculateOrderStatus, UNPAID_STATUSES } from './order-status';
 import { OrderNotFoundError, OrderNumberTakenError } from './orders.errors';
 
 export interface OrderFilter {
@@ -69,12 +71,21 @@ export class OrdersService {
     }
   }
 
-  async findUnpaid(): Promise<OrderWithPaid[]> {
+  async findUnpaid(
+    limit: number,
+    cursor?: number,
+  ): Promise<{ items: OrderWithPaid[]; nextCursor: number | null }> {
     const orders = await this.prisma.order.findMany({
       where: { status: { in: UNPAID_STATUSES } },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { id: 'asc' },
+      take: limit + 1,
+      ...(cursor !== undefined ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
-    return this.withBalances(orders);
+
+    const hasMore = orders.length > limit;
+    const page = hasMore ? orders.slice(0, limit) : orders;
+    const nextCursor = hasMore ? page[page.length - 1]!.id : null;
+    return { items: await this.withBalances(page), nextCursor };
   }
 
   findByNumber(orderNumber: string): Promise<Order | null> {
@@ -171,15 +182,44 @@ export class OrdersService {
     return { ...found, payments, refunds };
   }
 
-  async update(orderNumber: string, dto: UpdateOrderDto): Promise<Order> {
-    try {
-      return await this.prisma.order.update({ where: { orderNumber }, data: dto });
-    } catch (error) {
-      if (isRecordNotFound(error)) {
+  async update(orderNumber: string, dto: UpdateOrderDto, initiator: Initiator): Promise<Order> {
+    const { amountDue } = dto;
+    if (amountDue === undefined) {
+      try {
+        return await this.prisma.order.update({ where: { orderNumber }, data: dto });
+      } catch (error) {
+        if (isRecordNotFound(error)) {
+          throw new OrderNotFoundError(orderNumber);
+        }
+        throw error;
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const order = await lockOrderByNumber(tx, orderNumber);
+      if (!order) {
         throw new OrderNotFoundError(orderNumber);
       }
-      throw error;
-    }
+
+      const newAmountDue = new Prisma.Decimal(amountDue);
+      const paid = await netPaid(tx, order.id);
+      const status = calculateOrderStatus(newAmountDue, paid, order.status);
+
+      await tx.orderAmountChange.create({
+        data: {
+          orderId: order.id,
+          previousAmountDue: order.amountDue,
+          newAmountDue,
+          changedByTelegramId: initiator.telegramId,
+          changedByName: initiator.name,
+        },
+      });
+
+      return tx.order.update({
+        where: { id: order.id },
+        data: { ...dto, amountDue: newAmountDue, status },
+      });
+    });
   }
 
   private async findOneWithBalance(
