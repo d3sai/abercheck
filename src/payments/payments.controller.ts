@@ -1,4 +1,5 @@
 import { Body, Controller, HttpStatus, Post, Res, UseGuards } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { ApiKeyGuard } from '../common/guards/api-key.guard';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -6,7 +7,7 @@ import { type PaymentResponse, toPaymentResponse } from './dto/payment.response'
 import { PaymentsService } from './payments.service';
 
 @Controller('payments')
-@UseGuards(ApiKeyGuard)
+@UseGuards(ApiKeyGuard, ThrottlerGuard)
 export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
 
