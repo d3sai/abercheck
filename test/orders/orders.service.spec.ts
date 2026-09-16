@@ -120,26 +120,52 @@ describe('OrdersService', () => {
   });
 
   describe('findUnpaid', () => {
-    it('should attach the paid amount to each unpaid order', async () => {
+    it('should attach the paid amount to each unpaid order, capped at the limit plus one lookahead', async () => {
       order.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
       payment.groupBy.mockResolvedValue([
         { orderId: 1, _sum: { amount: new Prisma.Decimal('3614.32') } },
       ]);
 
-      const result = await service.findUnpaid();
+      const result = await service.findUnpaid(50);
 
       expect(order.findMany).toHaveBeenCalledWith({
         where: { status: { in: ['AWAITING_PAYMENT', 'PARTIALLY_PAID', 'UNDERPAID'] } },
-        orderBy: { createdAt: 'asc' },
+        orderBy: { id: 'asc' },
+        take: 51,
       });
-      expect(result.map((item) => item.amountPaid.toFixed(2))).toEqual(['3614.32', '0.00']);
+      expect(result.items.map((item) => item.amountPaid.toFixed(2))).toEqual(['3614.32', '0.00']);
+      expect(result.nextCursor).toBeNull();
     });
 
     it('should skip the payments query when nothing is unpaid', async () => {
       order.findMany.mockResolvedValue([]);
 
-      await expect(service.findUnpaid()).resolves.toEqual([]);
+      await expect(service.findUnpaid(50)).resolves.toEqual({ items: [], nextCursor: null });
       expect(payment.groupBy).not.toHaveBeenCalled();
+    });
+
+    it('should return a cursor and drop the lookahead row when there are more pages', async () => {
+      order.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }, { id: 3 }]);
+
+      const result = await service.findUnpaid(2);
+
+      expect(result.items).toHaveLength(2);
+      expect(result.items.map((item) => item.order)).toEqual([{ id: 1 }, { id: 2 }]);
+      expect(result.nextCursor).toBe(2);
+    });
+
+    it('should resume after the given cursor', async () => {
+      order.findMany.mockResolvedValue([]);
+
+      await service.findUnpaid(50, 7);
+
+      expect(order.findMany).toHaveBeenCalledWith({
+        where: { status: { in: ['AWAITING_PAYMENT', 'PARTIALLY_PAID', 'UNDERPAID'] } },
+        orderBy: { id: 'asc' },
+        take: 51,
+        cursor: { id: 7 },
+        skip: 1,
+      });
     });
   });
 

@@ -69,12 +69,21 @@ export class OrdersService {
     }
   }
 
-  async findUnpaid(): Promise<OrderWithPaid[]> {
+  async findUnpaid(
+    limit: number,
+    cursor?: number,
+  ): Promise<{ items: OrderWithPaid[]; nextCursor: number | null }> {
     const orders = await this.prisma.order.findMany({
       where: { status: { in: UNPAID_STATUSES } },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { id: 'asc' },
+      take: limit + 1,
+      ...(cursor !== undefined ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
-    return this.withBalances(orders);
+
+    const hasMore = orders.length > limit;
+    const page = hasMore ? orders.slice(0, limit) : orders;
+    const nextCursor = hasMore ? page[page.length - 1]!.id : null;
+    return { items: await this.withBalances(page), nextCursor };
   }
 
   findByNumber(orderNumber: string): Promise<Order | null> {
