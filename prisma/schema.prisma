@@ -140,3 +140,14 @@ model OrderAmountChange {
   @@index([orderId])
   @@map("order_amount_changes")
 }
+
+/**
+ * Anti-replay for Telegram Login Widget callbacks — a hash lives here until its signed auth_date expires.
+ */
+model TelegramLoginHash {
+  hash      String   @id
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@index([expiresAt])
+  @@map("telegram_login_hashes")
+}

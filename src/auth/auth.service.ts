@@ -41,7 +41,7 @@ export class AuthService {
   }
 
   async loginWithTelegram(data: TelegramLoginDto): Promise<SessionResponse> {
-    if (!this.telegram.verify(data)) {
+    if (!(await this.telegram.verify(data))) {
       throw AuthErrors.invalidTelegramLogin();
     }
     const telegramId = BigInt(data.id);
