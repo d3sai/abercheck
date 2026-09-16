@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import * as Sentry from '@sentry/nestjs';
 import { KYIV_TIME_ZONE, kyivDayStart, previousKyivDayStart } from '../common/kyiv-time';
 import { DailyReportService } from '../reports/daily-report.service';
 import type { BotReply } from './bot-reply';
@@ -18,7 +17,7 @@ export class DailyReportJob {
 
   @Cron('0 9 * * *', { name: 'daily-report', timeZone: KYIV_TIME_ZONE })
   async onSchedule(): Promise<void> {
-    await Sentry.withIsolationScope(() => this.run(new Date()));
+    await this.run(new Date());
   }
 
   async run(now: Date): Promise<void> {
@@ -34,7 +33,6 @@ export class DailyReportJob {
       this.logger.log(`Daily report sent, ${underpaid.length} orders marked underpaid`);
     } catch (error) {
       this.logger.error('Daily report failed', error);
-      Sentry.captureException(error);
     }
   }
 

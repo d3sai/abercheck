@@ -4,7 +4,6 @@ import {
   type OnApplicationBootstrap,
   type OnApplicationShutdown,
 } from '@nestjs/common';
-import * as Sentry from '@sentry/nestjs';
 import { InjectBot } from 'nestjs-telegraf';
 import { Telegraf } from 'telegraf';
 
@@ -24,10 +23,6 @@ export class BotLauncher implements OnApplicationBootstrap, OnApplicationShutdow
   onApplicationBootstrap(): void {
     this.bot.catch((error, ctx) => {
       this.logger.error(`Failed to handle update ${ctx.update.update_id}: ${describe(error)}`);
-      Sentry.withIsolationScope(() => {
-        Sentry.setTag('telegram.update_id', ctx.update.update_id);
-        Sentry.captureException(error);
-      });
     });
     this.launch(0);
   }
