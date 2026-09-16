@@ -87,8 +87,11 @@ export class CabinetOrdersController {
     @Param('orderNumber') orderNumber: string,
     @Body() dto: UpdateOrderDto,
   ): Promise<OrderDetailView> {
+    if (dto.amountDue !== undefined && !isAdmin(me)) {
+      throw AuthErrors.forbidden();
+    }
     const { order } = await this.ledger(me, orderNumber);
-    await this.orders.update(order.orderNumber, dto);
+    await this.orders.update(order.orderNumber, dto, initiatorOf(me));
     return toOrderDetail(await this.ledger(me, order.orderNumber));
   }
 
