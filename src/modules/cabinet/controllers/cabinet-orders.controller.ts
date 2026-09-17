@@ -139,12 +139,19 @@ export class CabinetOrdersController {
     @CurrentManager() me: Manager,
     @Param('orderNumber') orderNumber: string,
     @UploadedFiles() files: Express.Multer.File[],
+    @Body('atCreation') atCreation?: string,
   ): Promise<OrderDetailView> {
     if (!files?.length) {
       throw CabinetErrors.noFilesUploaded();
     }
     const { order } = await this.ledger(me, orderNumber);
-    await this.attachments.save(order.id, order.orderNumber, files, initiatorOf(me));
+    await this.attachments.save(
+      order.id,
+      order.orderNumber,
+      files,
+      initiatorOf(me),
+      atCreation === 'true',
+    );
     return this.detailFor(me, order.orderNumber);
   }
 
