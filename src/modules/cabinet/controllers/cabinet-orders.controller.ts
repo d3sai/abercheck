@@ -145,13 +145,7 @@ export class CabinetOrdersController {
       throw CabinetErrors.noFilesUploaded();
     }
     const { order } = await this.ledger(me, orderNumber);
-    await this.attachments.save(
-      order.id,
-      order.orderNumber,
-      files,
-      initiatorOf(me),
-      atCreation === 'true',
-    );
+    await this.attachments.save(order, files, initiatorOf(me), atCreation === 'true');
     return this.detailFor(me, order.orderNumber);
   }
 

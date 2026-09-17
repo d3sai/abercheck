@@ -3,15 +3,20 @@ import { ConfigService } from '@nestjs/config';
 import { InjectBot } from 'nestjs-telegraf';
 import { Telegraf } from 'telegraf';
 import type { EnvironmentVariables } from '../../common/config/env.validation';
-import type { OrderAttachment } from '../../generated/prisma/client';
+import type { Order, OrderAttachment } from '../../generated/prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import type { Initiator } from '../refunds/refund.events';
-import { escapeHtml } from '../telegram/core/format';
+import { escapeHtml, formatMoney } from '../telegram/core/format';
 import { AttachmentNotFoundError, AttachmentStorageError } from './attachments.errors';
 
-function caption(orderNumber: string, uploader: Initiator): string {
+type CaptionOrder = Pick<Order, 'orderNumber' | 'clientName' | 'clientPhone' | 'amountDue'>;
+
+function caption(order: CaptionOrder, uploader: Initiator): string {
   return [
-    `📎 Замовлення № <b>${escapeHtml(orderNumber)}</b>`,
+    `📎 Замовлення № <b>${escapeHtml(order.orderNumber)}</b>`,
+    `Клієнт: ${escapeHtml(order.clientName)}`,
+    ...(order.clientPhone ? [`Телефон: ${escapeHtml(order.clientPhone)}`] : []),
+    `Сума до оплати: ${formatMoney(order.amountDue)} грн`,
     `Додав: ${escapeHtml(uploader.name)}`,
   ].join('\n');
 }
@@ -30,8 +35,7 @@ export class AttachmentsService {
   }
 
   async save(
-    orderId: number,
-    orderNumber: string,
+    order: CaptionOrder & { id: number },
     files: Express.Multer.File[],
     uploader: Initiator,
     keepMessageOnDelete: boolean,
@@ -43,16 +47,19 @@ export class AttachmentsService {
         sent = await this.bot.telegram.sendDocument(
           this.storageChatId,
           { source: file.buffer, filename: file.originalname },
-          { caption: caption(orderNumber, uploader), parse_mode: 'HTML' },
+          { caption: caption(order, uploader), parse_mode: 'HTML' },
         );
       } catch (error) {
-        this.logger.error(`Failed to store an attachment for order #${orderId} in Telegram`, error);
+        this.logger.error(
+          `Failed to store an attachment for order #${order.id} in Telegram`,
+          error,
+        );
         throw new AttachmentStorageError(error);
       }
       attachments.push(
         await this.prisma.orderAttachment.create({
           data: {
-            orderId,
+            orderId: order.id,
             filename: file.originalname,
             mimeType: file.mimetype,
             size: file.size,
