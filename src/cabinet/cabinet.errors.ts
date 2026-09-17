@@ -18,4 +18,6 @@ export const CabinetErrors = {
       'PERIOD_INVALID',
       'Некоректний період: початок має бути не пізніше кінця, не довше 366 днів',
     ),
+  noFilesUploaded: () =>
+    new ApiError(HttpStatus.BAD_REQUEST, 'ATTACHMENT_REQUIRED', 'Виберіть хоча б один файл'),
 };

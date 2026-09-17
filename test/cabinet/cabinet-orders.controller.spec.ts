@@ -9,6 +9,7 @@ import {
   OrderStatus,
   Prisma,
 } from '../../src/generated/prisma/client';
+import type { AttachmentsService } from '../../src/attachments/attachments.service';
 import type { ManagersService } from '../../src/managers/managers.service';
 import { OrderNotFoundError } from '../../src/orders/orders.errors';
 import type { OrdersService } from '../../src/orders/orders.service';
@@ -54,10 +55,12 @@ describe('CabinetOrdersController', () => {
   const orders = { search: jest.fn(), findLedger: jest.fn(), create: jest.fn(), update: jest.fn() };
   const managers = { findById: jest.fn() };
   const refunds = { refund: jest.fn(), cancelUnpaid: jest.fn() };
+  const attachments = { list: jest.fn() };
   const controller = new CabinetOrdersController(
     orders as unknown as OrdersService,
     managers as unknown as ManagersService,
     refunds as unknown as RefundsService,
+    attachments as unknown as AttachmentsService,
   );
   const manager = {
     id: 7,
@@ -73,6 +76,7 @@ describe('CabinetOrdersController', () => {
     amountDue: '6158.41',
   };
 
+  beforeEach(() => attachments.list.mockResolvedValue([]));
   afterEach(() => jest.resetAllMocks());
 
   describe('list', () => {

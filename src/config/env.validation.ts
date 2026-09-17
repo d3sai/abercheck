@@ -67,6 +67,14 @@ export class EnvironmentVariables {
     message: 'ADMIN_TELEGRAM_IDS must be a comma-separated list of Telegram user ids',
   })
   ADMIN_TELEGRAM_IDS: string[] = [];
+
+  /** Where order attachments (screenshots, PDFs) are stored on disk. */
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined,
+  )
+  @IsOptional()
+  @IsString()
+  ATTACHMENTS_DIR?: string;
 }
 
 export function listenTarget({
