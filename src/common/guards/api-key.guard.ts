@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import type { EnvironmentVariables } from '../../config/env.validation';
+import type { EnvironmentVariables } from '../../common/config/env.validation';
 
 export const API_KEY_HEADER = 'x-api-key';
 

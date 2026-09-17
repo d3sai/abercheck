@@ -159,9 +159,6 @@ model OrderAttachment {
   @@map("order_attachments")
 }
 
-/**
- * Anti-replay for Telegram Login Widget callbacks — a hash lives here until its signed auth_date expires.
- */
 model TelegramLoginHash {
   hash      String   @id
   expiresAt DateTime @map("expires_at") @db.Timestamptz(3)

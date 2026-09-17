@@ -2,15 +2,15 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
-import { AuthModule } from './auth/auth.module';
-import { CabinetModule } from './cabinet/cabinet.module';
-import { validateEnv } from './config/env.validation';
-import { HealthModule } from './health/health.module';
-import { ManagersModule } from './managers/managers.module';
-import { OrdersModule } from './orders/orders.module';
-import { PaymentsModule } from './payments/payments.module';
-import { PrismaModule } from './prisma/prisma.module';
-import { TelegramModule } from './telegram/telegram.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { CabinetModule } from './modules/cabinet/cabinet.module';
+import { validateEnv } from './common/config/env.validation';
+import { HealthModule } from './modules/health/health.module';
+import { ManagersModule } from './modules/managers/managers.module';
+import { OrdersModule } from './modules/orders/orders.module';
+import { PaymentsModule } from './modules/payments/payments.module';
+import { PrismaModule } from './common/prisma/prisma.module';
+import { TelegramModule } from './modules/telegram/telegram.module';
 
 @Module({
   imports: [

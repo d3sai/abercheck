@@ -2,7 +2,7 @@ import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { type EnvironmentVariables, listenTarget } from './config/env.validation';
+import { type EnvironmentVariables, listenTarget } from './common/config/env.validation';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
