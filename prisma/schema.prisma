@@ -84,6 +84,7 @@ model Order {
   payments      Payment[]
   refunds       Refund[]
   amountChanges OrderAmountChange[]
+  attachments   OrderAttachment[]
 
   @@index([status])
   @@index([managerId])
@@ -139,6 +140,23 @@ model OrderAmountChange {
 
   @@index([orderId])
   @@map("order_amount_changes")
+}
+
+model OrderAttachment {
+  id                   Int      @id @default(autoincrement())
+  orderId              Int      @map("order_id")
+  filename             String
+  mimeType             String   @map("mime_type")
+  size                 Int
+  storageKey           String   @map("storage_key")
+  uploadedByTelegramId BigInt   @map("uploaded_by_telegram_id")
+  uploadedByName       String   @map("uploaded_by_name")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@map("order_attachments")
 }
 
 /**

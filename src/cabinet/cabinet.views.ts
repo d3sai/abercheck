@@ -3,6 +3,7 @@ import type {
   Manager,
   ManagerStatus,
   MatchType,
+  OrderAttachment,
   OrderStatus,
   Payment,
   Prisma,
@@ -66,12 +67,22 @@ export interface RefundView {
   createdAt: string;
 }
 
+export interface OrderAttachmentView {
+  id: number;
+  filename: string;
+  mimeType: string;
+  size: number;
+  uploadedByName: string;
+  createdAt: string;
+}
+
 export interface OrderDetailView extends OrderSummaryView {
   exchangeRate: string | null;
   requisites: string | null;
   comment: string | null;
   payments: PaymentView[];
   refunds: RefundView[];
+  attachments: OrderAttachmentView[];
 }
 
 export interface ManagerView extends MeResponse {
@@ -151,7 +162,21 @@ export function toRefundView(refund: Refund): RefundView {
   };
 }
 
-export function toOrderDetail(ledger: OrderLedger): OrderDetailView {
+export function toAttachmentView(attachment: OrderAttachment): OrderAttachmentView {
+  return {
+    id: attachment.id,
+    filename: attachment.filename,
+    mimeType: attachment.mimeType,
+    size: attachment.size,
+    uploadedByName: attachment.uploadedByName,
+    createdAt: attachment.createdAt.toISOString(),
+  };
+}
+
+export function toOrderDetail(
+  ledger: OrderLedger,
+  attachments: OrderAttachment[],
+): OrderDetailView {
   const { order } = ledger;
   return {
     ...toOrderSummary(ledger),
@@ -160,6 +185,7 @@ export function toOrderDetail(ledger: OrderLedger): OrderDetailView {
     comment: order.comment,
     payments: ledger.payments.map(toPaymentView),
     refunds: ledger.refunds.map(toRefundView),
+    attachments: attachments.map(toAttachmentView),
   };
 }
 

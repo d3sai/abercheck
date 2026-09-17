@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AttachmentsModule } from '../attachments/attachments.module';
 import { AuthModule } from '../auth/auth.module';
 import { ManagersModule } from '../managers/managers.module';
 import { OrdersModule } from '../orders/orders.module';
@@ -11,7 +12,15 @@ import { CabinetPaymentsController } from './cabinet-payments.controller';
 import { CabinetStatsController } from './cabinet-stats.controller';
 
 @Module({
-  imports: [AuthModule, ManagersModule, OrdersModule, PaymentsModule, RefundsModule, ReportsModule],
+  imports: [
+    AttachmentsModule,
+    AuthModule,
+    ManagersModule,
+    OrdersModule,
+    PaymentsModule,
+    RefundsModule,
+    ReportsModule,
+  ],
   controllers: [
     CabinetOrdersController,
     CabinetPaymentsController,
