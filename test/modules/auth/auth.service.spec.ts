@@ -1,4 +1,3 @@
-import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { AuthService, JWT_AUDIENCE, JWT_ISSUER } from '../../../src/modules/auth/auth.service';
@@ -65,7 +64,6 @@ describe('AuthService', () => {
         { provide: PrismaService, useValue: { manager } },
         { provide: JwtService, useValue: jwt },
         { provide: TelegramLoginVerifier, useValue: telegram },
-        { provide: ConfigService, useValue: { get: () => ['111'] } },
       ],
     }).compile();
 
@@ -120,9 +118,10 @@ describe('AuthService', () => {
       await expect(service.authenticate(session.token)).resolves.toBe(active);
     });
 
-    it('should make an unregistered id from ADMIN_TELEGRAM_IDS an active admin', async () => {
+    it('should make the very first manager the bot ever sees an active admin', async () => {
       const admin = { ...active, telegramId: 111n, role: ManagerRole.ADMIN };
       manager.findUnique.mockResolvedValue(null);
+      manager.count.mockResolvedValue(0);
       manager.upsert.mockResolvedValue(admin);
 
       const session = await service.loginWithTelegram({
@@ -132,6 +131,7 @@ describe('AuthService', () => {
         last_name: 'Адмін',
       });
 
+      expect(manager.count).toHaveBeenCalledWith({ where: { telegramId: { not: 111n } } });
       expect(manager.upsert).toHaveBeenCalledWith({
         where: { telegramId: 111n },
         create: {
@@ -146,30 +146,47 @@ describe('AuthService', () => {
       expect(session.manager.role).toBe(ManagerRole.ADMIN);
     });
 
-    it('should promote a listed manager while the cabinet has no active admin', async () => {
-      manager.findUnique.mockResolvedValue({ ...active, telegramId: 111n });
+    it('should promote its own pending request when nobody else has registered yet', async () => {
+      manager.findUnique.mockResolvedValue({
+        ...active,
+        telegramId: 111n,
+        status: ManagerStatus.PENDING,
+        role: ManagerRole.MANAGER,
+      });
       manager.count.mockResolvedValue(0);
       manager.upsert.mockResolvedValue({ ...active, telegramId: 111n, role: ManagerRole.ADMIN });
 
       await service.loginWithTelegram({ ...telegramLogin, id: 111 });
 
-      expect(manager.count).toHaveBeenCalledWith({
-        where: { role: ManagerRole.ADMIN, status: ManagerStatus.ACTIVE },
-      });
+      expect(manager.count).toHaveBeenCalledWith({ where: { telegramId: { not: 111n } } });
       expect(manager.upsert).toHaveBeenCalled();
     });
 
-    it('should not undo a decision made in the cabinet once an admin exists', async () => {
+    it('should not bootstrap a second manager once someone else is already registered', async () => {
+      manager.findUnique.mockResolvedValue({
+        ...active,
+        telegramId: 111n,
+        status: ManagerStatus.PENDING,
+      });
+      manager.count.mockResolvedValue(1);
+
+      await expect(failure(service.loginWithTelegram({ ...telegramLogin, id: 111 }))).resolves.toBe(
+        'ACCESS_PENDING',
+      );
+      expect(manager.upsert).not.toHaveBeenCalled();
+    });
+
+    it('should not undo a rejection even if no one else is registered', async () => {
       manager.findUnique.mockResolvedValue({
         ...active,
         telegramId: 111n,
         status: ManagerStatus.REJECTED,
       });
-      manager.count.mockResolvedValue(1);
 
       await expect(failure(service.loginWithTelegram({ ...telegramLogin, id: 111 }))).resolves.toBe(
         'ACCESS_REJECTED',
       );
+      expect(manager.count).not.toHaveBeenCalled();
       expect(manager.upsert).not.toHaveBeenCalled();
     });
   });

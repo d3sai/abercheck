@@ -52,21 +52,6 @@ export class EnvironmentVariables {
   @IsString()
   @MinLength(32)
   WEB_JWT_SECRET!: string;
-
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string'
-      ? value
-          .split(',')
-          .map((id) => id.trim())
-          .filter(Boolean)
-      : value,
-  )
-  @IsOptional()
-  @Matches(/^\d+$/, {
-    each: true,
-    message: 'ADMIN_TELEGRAM_IDS must be a comma-separated list of Telegram user ids',
-  })
-  ADMIN_TELEGRAM_IDS: string[] = [];
 }
 
 export function listenTarget({

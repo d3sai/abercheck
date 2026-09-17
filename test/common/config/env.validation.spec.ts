@@ -58,20 +58,4 @@ describe('validateEnv', () => {
   it('should reject a short WEB_JWT_SECRET', () => {
     expect(() => validateEnv({ ...valid, WEB_JWT_SECRET: 'short' })).toThrow(/WEB_JWT_SECRET/);
   });
-
-  it('should parse ADMIN_TELEGRAM_IDS as a list of ids', () => {
-    expect(validateEnv({ ...valid, ADMIN_TELEGRAM_IDS: ' 111, 222 ,' }).ADMIN_TELEGRAM_IDS).toEqual(
-      ['111', '222'],
-    );
-  });
-
-  it('should have no bootstrap admins by default', () => {
-    expect(validateEnv(valid).ADMIN_TELEGRAM_IDS).toEqual([]);
-  });
-
-  it('should reject ADMIN_TELEGRAM_IDS that are not numeric ids', () => {
-    expect(() => validateEnv({ ...valid, ADMIN_TELEGRAM_IDS: '111,@admin' })).toThrow(
-      /ADMIN_TELEGRAM_IDS/,
-    );
-  });
 });

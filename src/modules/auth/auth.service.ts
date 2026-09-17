@@ -1,8 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'node:crypto';
-import type { EnvironmentVariables } from '../../common/config/env.validation';
 import { type Manager, ManagerRole, ManagerStatus } from '../../generated/prisma/client';
 import { isUniqueViolation } from '../../common/prisma/prisma-errors';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -28,16 +26,11 @@ const dummyHash = () => (timingDummy ??= hashPassword(randomBytes(16).toString('
 
 @Injectable()
 export class AuthService {
-  private readonly adminTelegramIds: ReadonlySet<string>;
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly telegram: TelegramLoginVerifier,
-    config: ConfigService<EnvironmentVariables, true>,
-  ) {
-    this.adminTelegramIds = new Set(config.get('ADMIN_TELEGRAM_IDS', { infer: true }));
-  }
+  ) {}
 
   async loginWithTelegram(data: TelegramLoginDto): Promise<SessionResponse> {
     if (!(await this.telegram.verify(data))) {
@@ -122,17 +115,13 @@ export class AuthService {
     return valid ? manager : null;
   }
 
+  /** The very first manager the bot ever sees becomes an active admin — nobody else can. */
   private async bootstrapsAdmin(telegramId: bigint, existing: Manager | null): Promise<boolean> {
-    if (!this.adminTelegramIds.has(telegramId.toString())) {
+    if (existing?.status === ManagerStatus.ACTIVE || existing?.status === ManagerStatus.REJECTED) {
       return false;
     }
-    if (!existing || existing.status === ManagerStatus.PENDING) {
-      return true;
-    }
-    const activeAdmins = await this.prisma.manager.count({
-      where: { role: ManagerRole.ADMIN, status: ManagerStatus.ACTIVE },
-    });
-    return activeAdmins === 0;
+    const others = await this.prisma.manager.count({ where: { telegramId: { not: telegramId } } });
+    return others === 0;
   }
 
   private ensureActive(manager: Manager | null): Manager {
