@@ -150,6 +150,7 @@ model OrderAttachment {
   size                 Int
   telegramFileId       String   @map("telegram_file_id")
   telegramMessageId    Int      @map("telegram_message_id")
+  keepMessageOnDelete  Boolean  @default(false) @map("keep_message_on_delete")
   uploadedByTelegramId BigInt   @map("uploaded_by_telegram_id")
   uploadedByName       String   @map("uploaded_by_name")
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)

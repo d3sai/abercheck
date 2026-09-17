@@ -9,10 +9,9 @@ import type { Initiator } from '../refunds/refund.events';
 import { escapeHtml } from '../telegram/core/format';
 import { AttachmentNotFoundError, AttachmentStorageError } from './attachments.errors';
 
-function caption(orderNumber: string, filename: string, uploader: Initiator): string {
+function caption(orderNumber: string, uploader: Initiator): string {
   return [
     `📎 Замовлення № <b>${escapeHtml(orderNumber)}</b>`,
-    escapeHtml(filename),
     `Додав: ${escapeHtml(uploader.name)}`,
   ].join('\n');
 }
@@ -35,6 +34,7 @@ export class AttachmentsService {
     orderNumber: string,
     files: Express.Multer.File[],
     uploader: Initiator,
+    keepMessageOnDelete: boolean,
   ): Promise<OrderAttachment[]> {
     const attachments: OrderAttachment[] = [];
     for (const file of files) {
@@ -43,7 +43,7 @@ export class AttachmentsService {
         sent = await this.bot.telegram.sendDocument(
           this.storageChatId,
           { source: file.buffer, filename: file.originalname },
-          { caption: caption(orderNumber, file.originalname, uploader), parse_mode: 'HTML' },
+          { caption: caption(orderNumber, uploader), parse_mode: 'HTML' },
         );
       } catch (error) {
         this.logger.error(`Failed to store an attachment for order #${orderId} in Telegram`, error);
@@ -60,6 +60,7 @@ export class AttachmentsService {
             telegramMessageId: sent.message_id,
             uploadedByTelegramId: uploader.telegramId,
             uploadedByName: uploader.name,
+            keepMessageOnDelete,
           },
         }),
       );
@@ -101,6 +102,9 @@ export class AttachmentsService {
   async remove(orderId: number, id: number): Promise<void> {
     const attachment = await this.find(orderId, id);
     await this.prisma.orderAttachment.delete({ where: { id: attachment.id } });
+    if (attachment.keepMessageOnDelete) {
+      return;
+    }
     await this.bot.telegram
       .deleteMessage(this.storageChatId, attachment.telegramMessageId)
       .catch((error) =>
