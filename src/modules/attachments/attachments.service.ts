@@ -1,35 +1,54 @@
-import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
-import { extname, join, resolve } from 'node:path';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectBot } from 'nestjs-telegraf';
+import { Telegraf } from 'telegraf';
 import type { EnvironmentVariables } from '../../common/config/env.validation';
 import type { OrderAttachment } from '../../generated/prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import type { Initiator } from '../refunds/refund.events';
-import { AttachmentNotFoundError } from './attachments.errors';
+import { escapeHtml } from '../telegram/core/format';
+import { AttachmentNotFoundError, AttachmentStorageError } from './attachments.errors';
+
+function caption(orderNumber: string, filename: string, uploader: Initiator): string {
+  return [
+    `📎 Замовлення № <b>${escapeHtml(orderNumber)}</b>`,
+    escapeHtml(filename),
+    `Додав: ${escapeHtml(uploader.name)}`,
+  ].join('\n');
+}
 
 @Injectable()
 export class AttachmentsService {
-  private readonly dir: string;
+  private readonly logger = new Logger(AttachmentsService.name);
+  private readonly storageChatId: number;
 
   constructor(
     private readonly prisma: PrismaService,
+    @InjectBot() private readonly bot: Telegraf,
     config: ConfigService<EnvironmentVariables, true>,
   ) {
-    this.dir = resolve(config.get('ATTACHMENTS_DIR', { infer: true }) ?? './uploads');
+    this.storageChatId = config.get('TELEGRAM_ADMIN_CHAT_ID', { infer: true });
   }
 
   async save(
     orderId: number,
+    orderNumber: string,
     files: Express.Multer.File[],
     uploader: Initiator,
   ): Promise<OrderAttachment[]> {
-    await mkdir(this.dir, { recursive: true });
     const attachments: OrderAttachment[] = [];
     for (const file of files) {
-      const storageKey = `${randomUUID()}${extname(file.originalname)}`;
-      await writeFile(join(this.dir, storageKey), file.buffer);
+      let sent;
+      try {
+        sent = await this.bot.telegram.sendDocument(
+          this.storageChatId,
+          { source: file.buffer, filename: file.originalname },
+          { caption: caption(orderNumber, file.originalname, uploader), parse_mode: 'HTML' },
+        );
+      } catch (error) {
+        this.logger.error(`Failed to store an attachment for order #${orderId} in Telegram`, error);
+        throw new AttachmentStorageError(error);
+      }
       attachments.push(
         await this.prisma.orderAttachment.create({
           data: {
@@ -37,7 +56,8 @@ export class AttachmentsService {
             filename: file.originalname,
             mimeType: file.mimetype,
             size: file.size,
-            storageKey,
+            telegramFileId: sent.document.file_id,
+            telegramMessageId: sent.message_id,
             uploadedByTelegramId: uploader.telegramId,
             uploadedByName: uploader.name,
           },
@@ -63,12 +83,28 @@ export class AttachmentsService {
   }
 
   async readFile(attachment: OrderAttachment): Promise<Buffer> {
-    return readFile(join(this.dir, attachment.storageKey));
+    let url: URL;
+    try {
+      url = await this.bot.telegram.getFileLink(attachment.telegramFileId);
+    } catch (error) {
+      throw new AttachmentStorageError(error);
+    }
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new AttachmentStorageError(
+        new Error(`Telegram file download responded ${response.status}`),
+      );
+    }
+    return Buffer.from(await response.arrayBuffer());
   }
 
   async remove(orderId: number, id: number): Promise<void> {
     const attachment = await this.find(orderId, id);
     await this.prisma.orderAttachment.delete({ where: { id: attachment.id } });
-    await unlink(join(this.dir, attachment.storageKey)).catch(() => undefined);
+    await this.bot.telegram
+      .deleteMessage(this.storageChatId, attachment.telegramMessageId)
+      .catch((error) =>
+        this.logger.warn(`Failed to delete Telegram message for attachment #${id}`, error),
+      );
   }
 }

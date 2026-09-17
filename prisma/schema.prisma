@@ -148,7 +148,8 @@ model OrderAttachment {
   filename             String
   mimeType             String   @map("mime_type")
   size                 Int
-  storageKey           String   @map("storage_key")
+  telegramFileId       String   @map("telegram_file_id")
+  telegramMessageId    Int      @map("telegram_message_id")
   uploadedByTelegramId BigInt   @map("uploaded_by_telegram_id")
   uploadedByName       String   @map("uploaded_by_name")
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)

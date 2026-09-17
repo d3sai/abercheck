@@ -28,6 +28,3 @@
 
 # prisma client (генерується `prisma generate`)
 /src/generated
-
-# завантажені файли (скріншоти, PDF), прикріплені до замовлень
-/uploads

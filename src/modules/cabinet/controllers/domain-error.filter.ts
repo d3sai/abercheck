@@ -3,6 +3,7 @@ import type { Response } from 'express';
 import { MulterError } from 'multer';
 import {
   AttachmentNotFoundError,
+  AttachmentStorageError,
   UnsupportedFileTypeError,
 } from '../../attachments/attachments.errors';
 import { MAX_FILE_SIZE_BYTES, MAX_FILES_PER_UPLOAD } from '../../attachments/attachments.constants';
@@ -30,6 +31,7 @@ type DomainError =
   | NothingToRefundError
   | OrderHasPaymentsError
   | AttachmentNotFoundError
+  | AttachmentStorageError
   | UnsupportedFileTypeError
   | MulterError;
 
@@ -86,6 +88,13 @@ export function toApiError(error: DomainError): ApiError {
   if (error instanceof AttachmentNotFoundError) {
     return new ApiError(HttpStatus.NOT_FOUND, 'ATTACHMENT_NOT_FOUND', 'Файл не знайдено');
   }
+  if (error instanceof AttachmentStorageError) {
+    return new ApiError(
+      HttpStatus.BAD_GATEWAY,
+      'ATTACHMENT_STORAGE_FAILED',
+      'Не вдалося зберегти або отримати файл через Telegram, спробуйте ще раз',
+    );
+  }
   if (error instanceof UnsupportedFileTypeError) {
     return new ApiError(
       HttpStatus.BAD_REQUEST,
@@ -131,6 +140,7 @@ export function toApiError(error: DomainError): ApiError {
   NothingToRefundError,
   OrderHasPaymentsError,
   AttachmentNotFoundError,
+  AttachmentStorageError,
   UnsupportedFileTypeError,
   MulterError,
 )
