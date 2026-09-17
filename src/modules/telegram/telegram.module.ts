@@ -13,6 +13,7 @@ import { AdminUpdate } from './admin/admin.update';
 import { BotLauncher } from './core/bot-launcher';
 import { BotUpdate } from './core/bot.update';
 import { DailyReportJob } from './reports/daily-report.job';
+import { OrderNotifier } from './notifications/order-notifier';
 import { PaymentNotifier } from './notifications/payment-notifier';
 import { OrderDraftService } from './order-draft/order-draft.service';
 import { OrderListService } from './orders-list/order-list.service';
@@ -40,6 +41,7 @@ import { TelegramSender } from './core/telegram-sender';
     AdminUpdate,
     TelegramSender,
     PaymentNotifier,
+    OrderNotifier,
     AccessNotifier,
     OrderDraftService,
     OrderListService,

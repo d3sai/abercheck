@@ -1,7 +1,9 @@
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test } from '@nestjs/testing';
 import { OrderStatus, Prisma } from '../../../src/generated/prisma/client';
 import { PrismaService } from '../../../src/common/prisma/prisma.service';
 import type { CreateOrderDto } from '../../../src/modules/orders/dto/create-order.dto';
+import { OrderEvents } from '../../../src/modules/orders/order.events';
 import {
   OrderNotFoundError,
   OrderNumberTakenError,
@@ -31,6 +33,7 @@ describe('OrdersService', () => {
     orderAmountChange: { create: jest.fn() },
   };
   const $transaction = jest.fn<Promise<unknown>, [(client: typeof tx) => Promise<unknown>]>();
+  const events = { emit: jest.fn() };
   let service: OrdersService;
 
   const admin = { telegramId: 111n, name: 'Уляна' };
@@ -46,6 +49,7 @@ describe('OrdersService', () => {
       providers: [
         OrdersService,
         { provide: PrismaService, useValue: { order, payment, refund, $transaction } },
+        { provide: EventEmitter2, useValue: events },
       ],
     }).compile();
 
@@ -70,6 +74,21 @@ describe('OrdersService', () => {
       await service.create(7, dto);
 
       expect(order.create).toHaveBeenCalledWith({ data: { ...dto, managerId: 7 } });
+    });
+
+    it('should emit an event once the order is created', async () => {
+      order.create.mockResolvedValue({ id: 1 });
+
+      await service.create(7, dto);
+
+      expect(events.emit).toHaveBeenCalledWith(OrderEvents.Created, { order: { id: 1 } });
+    });
+
+    it('should not emit an event when creation fails', async () => {
+      order.create.mockRejectedValue(prismaError('P2002'));
+
+      await expect(service.create(7, dto)).rejects.toBeInstanceOf(OrderNumberTakenError);
+      expect(events.emit).not.toHaveBeenCalled();
     });
 
     it('should store the order number in the canonical 1C format', async () => {

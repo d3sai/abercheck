@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   type Manager,
   type Order,
@@ -14,6 +15,7 @@ import type { CreateOrderDto } from './dto/create-order.dto';
 import type { UpdateOrderDto } from './dto/update-order.dto';
 import { lockOrderByNumber, netPaid } from './order-ledger';
 import { normalizeOrderNumber } from './order-number';
+import { type OrderCreated, OrderEvents } from './order.events';
 import { calculateOrderStatus, UNPAID_STATUSES } from './order-status';
 import { OrderNotFoundError, OrderNumberTakenError } from './orders.errors';
 
@@ -57,18 +59,24 @@ function orderBy(sort: OrderSort, direction: Prisma.SortOrder) {
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly events: EventEmitter2,
+  ) {}
 
   async create(managerId: number, dto: CreateOrderDto): Promise<Order> {
     const orderNumber = normalizeOrderNumber(dto.orderNumber);
+    let order: Order;
     try {
-      return await this.prisma.order.create({ data: { ...dto, orderNumber, managerId } });
+      order = await this.prisma.order.create({ data: { ...dto, orderNumber, managerId } });
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw new OrderNumberTakenError(orderNumber);
       }
       throw error;
     }
+    this.events.emit(OrderEvents.Created, { order } satisfies OrderCreated);
+    return order;
   }
 
   async findUnpaid(
