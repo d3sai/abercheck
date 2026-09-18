@@ -5,14 +5,17 @@ import {
   ALLOWED_MIME_TYPES,
   MAX_FILES_PER_UPLOAD,
   MAX_FILE_SIZE_BYTES,
+  TELEGRAM_CAPTION_LIMIT,
 } from '../../attachments/attachments.constants';
 import { AttachmentsService, type TelegramFileRef } from '../../attachments/attachments.service';
-import { OrderType, Prisma, type Manager } from '../../../generated/prisma/client';
+import { type Manager, type Order, OrderType, Prisma } from '../../../generated/prisma/client';
 import { CreateOrderDto } from '../../orders/dto/create-order.dto';
 import { OrderNumberTakenError } from '../../orders/orders.errors';
 import { OrdersService } from '../../orders/orders.service';
 import { type BotReply, button } from '../core/bot-reply';
 import { escapeHtml, formatMoney } from '../core/format';
+import { TelegramSender } from '../core/telegram-sender';
+import { adminOrderCreatedMessage } from '../notifications/order-templates';
 import {
   parseExchangeRate,
   parseMoney,
@@ -58,6 +61,15 @@ interface Draft {
 
 const cancelButton = button('Скасувати', DraftAction.Cancel);
 
+function pluralizeFiles(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod100 >= 11 && mod100 <= 14) return 'файлів';
+  if (mod10 === 1) return 'файл';
+  if (mod10 >= 2 && mod10 <= 4) return 'файли';
+  return 'файлів';
+}
+
 @Injectable()
 export class OrderDraftService {
   private readonly drafts = new Map<bigint, Draft>();
@@ -65,6 +77,7 @@ export class OrderDraftService {
   constructor(
     private readonly orders: OrdersService,
     private readonly attachments: AttachmentsService,
+    private readonly sender: TelegramSender,
   ) {}
 
   hasDraft(userId: bigint): boolean {
@@ -109,9 +122,7 @@ export class OrderDraftService {
 
     if (errors.length > 0) {
       return {
-        html: ['⚠️ Виправте та надішліть шаблон ще раз:', ...errors.map((e) => `• ${e}`)].join(
-          '\n',
-        ),
+        html: ['⚠️ Виправте та надішліть ще раз:', ...errors.map((e) => `• ${e}`)].join('\n'),
         buttons: [[cancelButton]],
       };
     }
@@ -120,7 +131,7 @@ export class OrderDraftService {
     return this.summary(draft);
   }
 
-  addFile(userId: bigint, file: TelegramFileRef): BotReply | null {
+  async addFile(userId: bigint, file: TelegramFileRef, caption?: string): Promise<BotReply | null> {
     const draft = this.drafts.get(userId);
     if (!draft) {
       return null;
@@ -135,7 +146,14 @@ export class OrderDraftService {
       return { html: `⚠️ Максимум ${MAX_FILES_PER_UPLOAD} файлів на замовлення.` };
     }
     draft.files.push(file);
-    return { html: `📎 Додано «${escapeHtml(file.filename)}» (${draft.files.length}/${MAX_FILES_PER_UPLOAD}).` };
+
+    const text = caption?.trim();
+    if (!text) {
+      return {
+        html: `📎 Додано «${escapeHtml(file.filename)}» (${draft.files.length}/${MAX_FILES_PER_UPLOAD}).`,
+      };
+    }
+    return this.input(userId, text);
   }
 
   async confirm(manager: Manager): Promise<BotReply | null> {
@@ -152,18 +170,14 @@ export class OrderDraftService {
     if (validateSync(dto).length > 0) {
       return { html: '⚠️ Дані замовлення некоректні. Почніть заново: /new' };
     }
+    const hasFiles = draft.files.length > 0;
     try {
-      const order = await this.orders.create(manager.id, dto);
-      if (draft.files.length > 0) {
-        await this.attachments.saveFromTelegram(
-          order,
-          draft.files,
-          { telegramId: manager.telegramId, name: manager.name },
-          true,
-        );
+      const order = await this.orders.create(manager.id, dto, { notify: !hasFiles });
+      if (hasFiles) {
+        await this.notifyWithAttachment(order, manager, draft.files);
       }
       return {
-        html: `✅ Замовлення № <b>${escapeHtml(order.orderNumber)}</b> створено. Я повідомлю, щойно надійде оплата.`,
+        html: `✅ Замовлення № <b>${escapeHtml(order.orderNumber)}</b> створено — повідомлю про оплату.`,
       };
     } catch (error) {
       if (error instanceof OrderNumberTakenError) {
@@ -175,11 +189,34 @@ export class OrderDraftService {
     }
   }
 
+  // Merges the "order created" admin notice into the file's caption so admins get one message, not two.
+  private async notifyWithAttachment(
+    order: Order,
+    manager: Manager,
+    files: TelegramFileRef[],
+  ): Promise<void> {
+    const notice = adminOrderCreatedMessage(order, manager);
+    const canMergeCaption = notice.length <= TELEGRAM_CAPTION_LIMIT;
+    let merged = false;
+    try {
+      await this.attachments.saveFromTelegram(
+        order,
+        files,
+        { telegramId: manager.telegramId, name: manager.name },
+        true,
+        canMergeCaption ? notice : undefined,
+      );
+      merged = canMergeCaption;
+    } finally {
+      if (!merged) {
+        await this.sender.sendToAdmins(notice);
+      }
+    }
+  }
+
   cancel(userId: bigint): BotReply {
     const existed = this.drafts.delete(userId);
-    return {
-      html: existed ? 'Створення замовлення скасовано.' : 'Немає замовлення, яке створюється.',
-    };
+    return { html: existed ? 'Скасовано.' : 'Немає активного замовлення.' };
   }
 
   private template(type: OrderType): BotReply {
@@ -197,11 +234,11 @@ export class OrderDraftService {
     return {
       html: [
         `📝 <b>${title}</b>`,
-        'Заповніть і надішліть одним повідомленням:',
+        'Заповніть і надішліть одним повідомленням',
+        `(файл можна додати тут же або окремо, до ${MAX_FILES_PER_UPLOAD} шт.)`,
         '',
         `<pre>${block}</pre>`,
-        `Обов'язково: ${required}.${optional ? ` Необов'язково: ${optional}.` : ''}`,
-        `📎 Можна долучити файл окремим повідомленням (до ${MAX_FILES_PER_UPLOAD} шт.).`,
+        `Обов'язково: ${required}${optional ? `\nНеобов'язково: ${optional}` : ''}`,
       ].join('\n'),
       buttons: [[cancelButton]],
     };
@@ -214,15 +251,17 @@ export class OrderDraftService {
       return escapeHtml(value);
     };
     const fields = fieldsFor(type);
+    const width = Math.max(...fields.map((f) => f.label.length)) + 2;
     const lines = fields.map(({ field, label }) => {
       const value = data[field];
-      return `${label}: ${value === undefined ? '—' : display(field, value)}`;
+      return `${label.padEnd(width)}${value === undefined ? '—' : display(field, value)}`;
     });
-    if (files.length > 0) {
-      lines.push(`Файли: ${files.length}`);
-    }
+    const filesLine =
+      files.length > 0 ? `\n📎 ${files.length} ${pluralizeFiles(files.length)}` : '';
     return {
-      html: ['<b>Перевірте замовлення</b>', ...lines].join('\n'),
+      html: [`<b>Перевірте замовлення</b>`, `<pre>${lines.join('\n')}</pre>${filesLine}`].join(
+        '\n',
+      ),
       buttons: [
         [button('✅ Створити', DraftAction.Confirm), button('Скасувати', DraftAction.Cancel)],
       ],

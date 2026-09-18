@@ -12,7 +12,12 @@ export class AccessNotifier {
   @OnEvent(ManagerEvents.AccessChanged, { async: true })
   async onAccessChanged({ manager }: ManagerAccessChanged): Promise<void> {
     if (manager.status !== ManagerStatus.PENDING) {
-      await this.sender.send(manager.telegramId, decisionNotice(manager));
+      await this.sender.send(
+        manager.telegramId,
+        decisionNotice(manager),
+        undefined,
+        manager.status === ManagerStatus.ACTIVE,
+      );
     }
   }
 }

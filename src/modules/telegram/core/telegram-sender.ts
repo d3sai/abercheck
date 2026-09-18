@@ -4,6 +4,7 @@ import { InjectBot } from 'nestjs-telegraf';
 import { Telegraf } from 'telegraf';
 import type { BotCommand, BotCommandScope, InlineKeyboardButton } from 'telegraf/types';
 import type { EnvironmentVariables } from '../../../common/config/env.validation';
+import { mainMenuKeyboard } from './menu';
 
 @Injectable()
 export class TelegramSender {
@@ -21,12 +22,13 @@ export class TelegramSender {
     chatId: number | bigint,
     html: string,
     buttons?: InlineKeyboardButton[][],
+    menu = false,
   ): Promise<boolean> {
     try {
       await this.bot.telegram.sendMessage(Number(chatId), html, {
         parse_mode: 'HTML',
         link_preview_options: { is_disabled: true },
-        reply_markup: buttons ? { inline_keyboard: buttons } : undefined,
+        reply_markup: menu ? mainMenuKeyboard : buttons ? { inline_keyboard: buttons } : undefined,
       });
       return true;
     } catch (error) {

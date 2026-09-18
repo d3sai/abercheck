@@ -30,33 +30,35 @@ function requestText(manager: Manager): string {
   ].join('\n');
 }
 
-export const HELP =
-  'Команди:\n/new — створити замовлення\n/newminus — закрити мінус (без номера замовлення)\n' +
-  '/list — мої відкриті замовлення (/list all — усі)\n' +
-  '/cancel — скасувати створення замовлення\n\n' +
-  'Сповіщення про оплати за вашими замовленнями надходитимуть сюди автоматично.';
+export const HELP = [
+  'Керуйте кнопками знизу 👇 або командами:',
+  '/new — нове замовлення',
+  '/newminus — закрити мінус',
+  '/list — мої відкриті замовлення (/list all — усі)',
+  '/cancel — скасувати створення',
+  '',
+  'Про оплати за вашими замовленнями повідомлю сюди автоматично.',
+].join('\n');
 
 export function startReply(manager: Manager, isNew: boolean): BotReply {
   if (isNew) {
-    return { html: 'Заявку на доступ надіслано адміністраторам. Я напишу, щойно її розглянуть.' };
+    return { html: 'Заявку надіслано адміністраторам. Напишу, щойно розглянуть.' };
   }
   switch (manager.status) {
     case ManagerStatus.ACTIVE:
-      return { html: `Вітаю, ${escapeHtml(manager.name)}!\n\n${HELP}` };
+      return { html: `Вітаю, ${escapeHtml(manager.name)}! 👋\n\n${HELP}`, menu: true };
     case ManagerStatus.PENDING:
-      return {
-        html: 'Заявка на доступ ще на розгляді. Я напишу, щойно адміністратор її розгляне.',
-      };
+      return { html: 'Заявка ще на розгляді. Напишу, щойно її розглянуть.' };
     case ManagerStatus.REJECTED:
-      return { html: 'Доступ не надано. Якщо це помилка, зверніться до адміністратора.' };
+      return { html: 'Доступ не надано. Якщо це помилка — зверніться до адміністратора.' };
   }
 }
 
 export function decisionNotice(manager: Manager): string {
   return manager.status === ManagerStatus.ACTIVE
-    ? `✅ Доступ надано.\n\n${HELP}`
-    : 'Заявку на доступ відхилено. Якщо це помилка, зверніться до адміністратора.';
+    ? `✅ Доступ надано!\n\n${HELP}`
+    : 'Заявку відхилено. Якщо це помилка — зверніться до адміністратора.';
 }
 
 export const NOT_A_MANAGER =
-  'Ця дія доступна лише менеджерам. Надішліть /start, щоб подати заявку на доступ.';
+  'Ця дія доступна лише менеджерам. Надішліть /start, щоб подати заявку.';

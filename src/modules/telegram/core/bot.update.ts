@@ -2,7 +2,7 @@ import { Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import { Action, Command, Ctx, Help, Next, On, Start, Update } from 'nestjs-telegraf';
 import type { Context } from 'telegraf';
 import type { TelegramFileRef } from '../../attachments/attachments.service';
-import { type Manager, OrderType } from '../../../generated/prisma/client';
+import { type Manager, ManagerStatus, OrderType } from '../../../generated/prisma/client';
 import { ManagersService } from '../../managers/managers.service';
 import {
   ACCESS_DECISION,
@@ -15,6 +15,7 @@ import {
 } from '../access/access.messages';
 import { ADMIN_HELP } from '../admin/admin.update';
 import type { BotReply } from './bot-reply';
+import { MENU_LABEL } from './menu';
 import { OrderListService } from '../orders-list/order-list.service';
 import { DraftAction, OrderDraftService } from '../order-draft/order-draft.service';
 import {
@@ -84,7 +85,7 @@ export class BotUpdate implements OnApplicationBootstrap {
     if (ctx.chat?.id === this.sender.adminChatId) {
       await reply(ctx, { html: ADMIN_HELP });
     } else if (isPrivate(ctx)) {
-      await reply(ctx, { html: HELP });
+      await reply(ctx, { html: HELP, menu: true });
     }
   }
 
@@ -144,7 +145,12 @@ export class BotUpdate implements OnApplicationBootstrap {
 
     await ctx.editMessageText(decidedAccessRequest(manager, fullName(ctx)), { parse_mode: 'HTML' });
     await ctx.answerCbQuery(action === 'approve' ? 'Доступ надано' : 'Заявку відхилено');
-    await this.sender.send(manager.telegramId, decisionNotice(manager));
+    await this.sender.send(
+      manager.telegramId,
+      decisionNotice(manager),
+      undefined,
+      manager.status === ManagerStatus.ACTIVE,
+    );
     this.logger.log(`Manager #${manager.id} ${manager.status} by ${ctx.from?.id}`);
   }
 
@@ -166,9 +172,19 @@ export class BotUpdate implements OnApplicationBootstrap {
     if (!isPrivate(ctx) || !ctx.from || !ctx.text || ctx.text.startsWith('/')) {
       return next();
     }
+    switch (ctx.text) {
+      case MENU_LABEL.NewOrder:
+        return this.newOrder(ctx);
+      case MENU_LABEL.NewMinus:
+        return this.newMinusOrder(ctx);
+      case MENU_LABEL.List:
+        return this.list(ctx);
+      case MENU_LABEL.Cancel:
+        return this.cancel(ctx);
+    }
     const userId = BigInt(ctx.from.id);
     if (!this.drafts.hasDraft(userId)) {
-      await reply(ctx, { html: HELP });
+      await reply(ctx, { html: HELP, menu: true });
       return;
     }
     if (!(await this.activeManager(ctx))) {
@@ -187,12 +203,16 @@ export class BotUpdate implements OnApplicationBootstrap {
     if (!message || !('document' in message)) {
       return next();
     }
-    await this.attachFile(ctx, {
-      fileId: message.document.file_id,
-      filename: message.document.file_name ?? 'файл',
-      mimeType: message.document.mime_type ?? 'application/octet-stream',
-      size: message.document.file_size ?? 0,
-    });
+    await this.attachFile(
+      ctx,
+      {
+        fileId: message.document.file_id,
+        filename: message.document.file_name ?? 'файл',
+        mimeType: message.document.mime_type ?? 'application/octet-stream',
+        size: message.document.file_size ?? 0,
+      },
+      message.caption,
+    );
   }
 
   @On('photo')
@@ -202,15 +222,19 @@ export class BotUpdate implements OnApplicationBootstrap {
       return next();
     }
     const largest = message.photo[message.photo.length - 1]!;
-    await this.attachFile(ctx, {
-      fileId: largest.file_id,
-      filename: 'photo.jpg',
-      mimeType: 'image/jpeg',
-      size: largest.file_size ?? 0,
-    });
+    await this.attachFile(
+      ctx,
+      {
+        fileId: largest.file_id,
+        filename: 'photo.jpg',
+        mimeType: 'image/jpeg',
+        size: largest.file_size ?? 0,
+      },
+      message.caption,
+    );
   }
 
-  private async attachFile(ctx: Context, file: TelegramFileRef): Promise<void> {
+  private async attachFile(ctx: Context, file: TelegramFileRef, caption?: string): Promise<void> {
     if (!isPrivate(ctx) || !ctx.from) {
       return;
     }
@@ -222,7 +246,7 @@ export class BotUpdate implements OnApplicationBootstrap {
       this.drafts.cancel(userId);
       return;
     }
-    const answer = this.drafts.addFile(userId, file);
+    const answer = await this.drafts.addFile(userId, file, caption);
     if (answer) {
       await reply(ctx, answer);
     }

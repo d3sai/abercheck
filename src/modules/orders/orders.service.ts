@@ -64,7 +64,11 @@ export class OrdersService {
     private readonly events: EventEmitter2,
   ) {}
 
-  async create(managerId: number, dto: CreateOrderDto): Promise<Order> {
+  async create(
+    managerId: number,
+    dto: CreateOrderDto,
+    options?: { notify?: boolean },
+  ): Promise<Order> {
     const orderNumber = dto.orderNumber
       ? normalizeOrderNumber(dto.orderNumber)
       : generateClosingOrderNumber();
@@ -77,7 +81,9 @@ export class OrdersService {
       }
       throw error;
     }
-    this.events.emit(OrderEvents.Created, { order } satisfies OrderCreated);
+    if (options?.notify ?? true) {
+      this.events.emit(OrderEvents.Created, { order } satisfies OrderCreated);
+    }
     return order;
   }
 

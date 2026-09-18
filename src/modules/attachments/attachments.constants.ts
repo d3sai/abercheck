@@ -4,6 +4,7 @@ import { UnsupportedFileTypeError } from './attachments.errors';
 
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 export const MAX_FILES_PER_UPLOAD = 5;
+export const TELEGRAM_CAPTION_LIMIT = 1024;
 
 export const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',

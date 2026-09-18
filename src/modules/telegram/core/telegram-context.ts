@@ -1,6 +1,7 @@
 import type { Context } from 'telegraf';
-import type { InlineKeyboardMarkup, ForceReply } from 'telegraf/types';
+import type { ForceReply, InlineKeyboardMarkup, ReplyKeyboardMarkup } from 'telegraf/types';
 import type { BotReply } from './bot-reply';
+import { mainMenuKeyboard } from './menu';
 
 export type CommandContext = Context & { payload?: string };
 export type MatchContext = Context & { match: RegExpExecArray };
@@ -10,9 +11,16 @@ export const isPrivate = (ctx: Context) => ctx.chat?.type === 'private';
 export const fullName = (ctx: Context) =>
   [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || 'Без імені';
 
-function markup({ buttons, forceReply }: BotReply): InlineKeyboardMarkup | ForceReply | undefined {
+function markup({
+  buttons,
+  forceReply,
+  menu,
+}: BotReply): InlineKeyboardMarkup | ReplyKeyboardMarkup | ForceReply | undefined {
   if (forceReply) {
     return { force_reply: true, selective: true, input_field_placeholder: forceReply.placeholder };
+  }
+  if (menu) {
+    return mainMenuKeyboard;
   }
   return buttons ? { inline_keyboard: buttons } : undefined;
 }
