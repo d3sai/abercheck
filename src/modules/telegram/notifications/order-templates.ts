@@ -12,7 +12,6 @@ export function adminOrderCreatedMessage(order: Order, manager: Manager): string
     `Клієнт: ${escapeHtml(order.clientName)}`,
     `Сума: ${formatMoney(order.amountDue)} грн`,
     ...(order.exchangeRate ? [`Курс: ${formatRate(order.exchangeRate)}`] : []),
-    ...(order.clientPhone ? [`Телефон: ${escapeHtml(order.clientPhone)}`] : []),
     '',
     `Менеджер: ${escapeHtml(manager.name)}`,
     `Створено: ${formatKyivDateTime(order.createdAt)}`,

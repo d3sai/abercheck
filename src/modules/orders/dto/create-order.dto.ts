@@ -18,12 +18,6 @@ export class CreateOrderDto {
   clientName!: string;
 
   @Trim()
-  @IsOptional()
-  @IsString()
-  @MaxLength(32)
-  clientPhone?: string;
-
-  @Trim()
   @Matches(MONEY_PATTERN, { message: 'amountDue must be a positive amount with up to 2 decimals' })
   amountDue!: string;
 
@@ -33,17 +27,6 @@ export class CreateOrderDto {
     message: 'exchangeRate must be a positive rate with up to 4 decimals',
   })
   exchangeRate?: string;
-
-  @Trim()
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  invoiceNumber?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(2000)
-  requisites?: string;
 
   @IsOptional()
   @IsString()

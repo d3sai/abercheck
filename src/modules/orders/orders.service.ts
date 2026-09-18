@@ -153,8 +153,6 @@ export class OrdersService {
         ? [
             { orderNumber: { contains: text, mode: 'insensitive' } },
             { clientName: { contains: text, mode: 'insensitive' } },
-            { invoiceNumber: { contains: text, mode: 'insensitive' } },
-            { clientPhone: { contains: text } },
           ]
         : undefined,
     };

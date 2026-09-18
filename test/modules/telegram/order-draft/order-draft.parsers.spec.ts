@@ -2,7 +2,6 @@ import {
   parseExchangeRate,
   parseMoney,
   parseOrderNumber,
-  parsePhone,
   parseText,
 } from '../../../../src/modules/telegram/order-draft/order-draft.parsers';
 
@@ -42,15 +41,6 @@ describe('order draft parsers', () => {
     ['44,12345', null],
   ])('parseExchangeRate(%p) → %p', (input, expected) => {
     expect(value(parseExchangeRate(input))).toBe(expected);
-  });
-
-  it.each([
-    ['+380 67 123 45 67', '+380 67 123 45 67'],
-    ['(067) 123-45-67', '(067) 123-45-67'],
-    ['дзвонити ввечері', null],
-    ['123', null],
-  ])('parsePhone(%p) → %p', (input, expected) => {
-    expect(value(parsePhone(input))).toBe(expected);
   });
 
   it('should trim text and enforce the length limit', () => {

@@ -33,8 +33,6 @@ export interface OrderSummaryView {
   id: number;
   orderNumber: string;
   clientName: string;
-  clientPhone: string | null;
-  invoiceNumber: string | null;
   amountDue: string;
   amountPaid: string;
   amountRemaining: string;
@@ -77,7 +75,6 @@ export interface OrderAttachmentView {
 
 export interface OrderDetailView extends OrderSummaryView {
   exchangeRate: string | null;
-  requisites: string | null;
   comment: string | null;
   payments: PaymentView[];
   refunds: RefundView[];
@@ -123,8 +120,6 @@ export function toOrderSummary({
     id: order.id,
     orderNumber: order.orderNumber,
     clientName: order.clientName,
-    clientPhone: order.clientPhone,
-    invoiceNumber: order.invoiceNumber,
     amountDue: money(order.amountDue),
     amountPaid: money(amountPaid),
     amountRemaining: money(order.amountDue.minus(amountPaid)),
@@ -180,7 +175,6 @@ export function toOrderDetail(
   return {
     ...toOrderSummary(ledger),
     exchangeRate: order.exchangeRate?.toFixed(4) ?? null,
-    requisites: order.requisites,
     comment: order.comment,
     payments: ledger.payments.map(toPaymentView),
     refunds: ledger.refunds.map(toRefundView),

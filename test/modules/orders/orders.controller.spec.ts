@@ -18,7 +18,6 @@ describe('OrdersController', () => {
           order: {
             orderNumber: '0000-066717',
             clientName: 'Іваненко Іван',
-            invoiceNumber: null,
             amountDue: d('1250.50'),
             status: 'AWAITING_PAYMENT',
             createdAt: new Date('2026-09-03T12:00:00Z'),
@@ -38,7 +37,6 @@ describe('OrdersController', () => {
         {
           order_number: '0000-066717',
           client_name: 'Іваненко Іван',
-          invoice_number: null,
           amount_due: '1250.50',
           amount_paid: '0.00',
           amount_remaining: '1250.50',

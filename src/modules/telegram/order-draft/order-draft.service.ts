@@ -11,7 +11,6 @@ import {
   parseExchangeRate,
   parseMoney,
   parseOrderNumber,
-  parsePhone,
   type ParseResult,
   parseText,
 } from './order-draft.parsers';
@@ -54,27 +53,6 @@ const STEPS: readonly DraftStep[] = [
     prompt: 'Курс долара, напр. 44,9',
     optional: true,
     parse: parseExchangeRate,
-  },
-  {
-    field: 'clientPhone',
-    label: 'Телефон',
-    prompt: 'Телефон клієнта',
-    optional: true,
-    parse: parsePhone,
-  },
-  {
-    field: 'invoiceNumber',
-    label: 'Рахунок / інвойс',
-    prompt: 'Номер рахунку або інвойсу',
-    optional: true,
-    parse: parseText(64),
-  },
-  {
-    field: 'requisites',
-    label: 'Реквізити',
-    prompt: 'IBAN або інші реквізити',
-    optional: true,
-    parse: parseText(2000),
   },
   {
     field: 'comment',

@@ -9,13 +9,12 @@ import type { Initiator } from '../refunds/refund.events';
 import { escapeHtml, formatMoney } from '../telegram/core/format';
 import { AttachmentNotFoundError, AttachmentStorageError } from './attachments.errors';
 
-type CaptionOrder = Pick<Order, 'orderNumber' | 'clientName' | 'clientPhone' | 'amountDue'>;
+type CaptionOrder = Pick<Order, 'orderNumber' | 'clientName' | 'amountDue'>;
 
 function caption(order: CaptionOrder, uploader: Initiator): string {
   return [
     `📎 Замовлення № <b>${escapeHtml(order.orderNumber)}</b>`,
     `Клієнт: ${escapeHtml(order.clientName)}`,
-    ...(order.clientPhone ? [`Телефон: ${escapeHtml(order.clientPhone)}`] : []),
     `Сума до оплати: ${formatMoney(order.amountDue)} грн`,
     `Додав: ${escapeHtml(uploader.name)}`,
   ].join('\n');

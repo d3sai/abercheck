@@ -278,7 +278,7 @@ describe('OrdersService', () => {
       order.count.mockResolvedValue(0);
     });
 
-    it('should match number, client, invoice and phone within the filters', async () => {
+    it('should match number and client within the filters', async () => {
       await service.search({
         managerId: 7,
         statuses: [OrderStatus.PAID],
@@ -295,8 +295,6 @@ describe('OrdersService', () => {
         OR: [
           { orderNumber: { contains: '0667', mode: 'insensitive' } },
           { clientName: { contains: '0667', mode: 'insensitive' } },
-          { invoiceNumber: { contains: '0667', mode: 'insensitive' } },
-          { clientPhone: { contains: '0667' } },
         ],
       };
       expect(order.findMany).toHaveBeenCalledWith({

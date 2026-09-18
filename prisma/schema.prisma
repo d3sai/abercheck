@@ -69,11 +69,8 @@ model Order {
   id            Int         @id @default(autoincrement())
   orderNumber   String      @unique @map("order_number")
   clientName    String      @map("client_name")
-  clientPhone   String?     @map("client_phone")
   amountDue     Decimal     @map("amount_due") @db.Decimal(14, 2)
   exchangeRate  Decimal?    @map("exchange_rate") @db.Decimal(8, 4)
-  invoiceNumber String?     @map("invoice_number")
-  requisites    String?
   comment       String?
   status        OrderStatus @default(AWAITING_PAYMENT)
   managerId     Int         @map("manager_id")

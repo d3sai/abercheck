@@ -36,7 +36,7 @@ describe('OrderDraftService', () => {
   it('should start with the order number and offer only cancel on a required step', () => {
     const reply = service.start(USER);
 
-    expect(reply.html).toContain('1/8');
+    expect(reply.html).toContain('1/5');
     expect(reply.html).toContain('0000-066717');
     expect(buttonData(reply)).toEqual([DraftAction.Cancel]);
   });
@@ -52,7 +52,7 @@ describe('OrderDraftService', () => {
 
     expect(reply?.html).toContain('0000-066717');
     const next = await service.input(USER, '0000-066717');
-    expect(next?.html).toContain('2/8');
+    expect(next?.html).toContain('2/5');
   });
 
   it('should reject an order number that already exists', async () => {
@@ -64,7 +64,7 @@ describe('OrderDraftService', () => {
     expect(reply?.html).toContain('вже є в системі');
     orders.findByNumber.mockResolvedValue(null);
     const next = await service.input(USER, '0000-066718');
-    expect(next?.html).toContain('2/8');
+    expect(next?.html).toContain('2/5');
   });
 
   it('should offer skip on optional steps and not on required ones', async () => {
@@ -74,14 +74,14 @@ describe('OrderDraftService', () => {
     await fillRequired();
 
     const skipped = service.skip(USER);
-    expect(skipped?.html).toContain('5/8');
+    expect(skipped?.html).toContain('5/5');
     expect(buttonData(skipped)).toEqual([DraftAction.Skip, DraftAction.Cancel]);
   });
 
   it('should show a summary with normalized values and create the order on confirm', async () => {
     await fillRequired();
     await service.input(USER, '44,9%');
-    for (let i = 0; i < 4; i++) service.skip(USER);
+    service.skip(USER);
 
     const summary = await service.input(USER, 'ще текст');
     expect(summary?.html).toContain('Натисніть');
@@ -102,9 +102,6 @@ describe('OrderDraftService', () => {
   it("should render the summary in the managers' format", async () => {
     await fillRequired();
     await service.input(USER, '44,9');
-    service.skip(USER);
-    service.skip(USER);
-    service.skip(USER);
 
     const summary = service.skip(USER);
 
@@ -115,9 +112,6 @@ describe('OrderDraftService', () => {
         'Клієнт: Чернявський Владислав',
         'Сума: 6 158,41 грн',
         'Курс: 44,9',
-        'Телефон: —',
-        'Рахунок / інвойс: —',
-        'Реквізити: —',
         'Коментар: —',
       ].join('\n'),
     );
@@ -133,7 +127,7 @@ describe('OrderDraftService', () => {
 
   it('should report a number taken between the check and the confirmation', async () => {
     await fillRequired();
-    for (let i = 0; i < 5; i++) service.skip(USER);
+    for (let i = 0; i < 2; i++) service.skip(USER);
     orders.create.mockRejectedValue(new OrderNumberTakenError('0000-066717'));
 
     const reply = await service.confirm(USER, 7);

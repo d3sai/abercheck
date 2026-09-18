@@ -15,23 +15,6 @@ export class UpdateOrderDto {
   @Matches(MONEY_PATTERN, { message: 'amountDue must be a positive amount with up to 2 decimals' })
   amountDue?: string;
 
-  @Trim()
-  @IsOptional()
-  @IsString()
-  @MaxLength(32)
-  clientPhone?: string;
-
-  @Trim()
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  invoiceNumber?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(2000)
-  requisites?: string;
-
   @IsOptional()
   @IsString()
   @MaxLength(2000)

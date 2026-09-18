@@ -34,13 +34,6 @@ export function parseExchangeRate(input: string): ParseResult {
     : fail('Вкажіть курс числом: 44,9');
 }
 
-export function parsePhone(input: string): ParseResult {
-  const value = input.trim();
-  return /^\+?[\d\s()-]{7,20}$/.test(value)
-    ? ok(value)
-    : fail('Вкажіть телефон цифрами: +380 67 123 45 67');
-}
-
 export function parseText(maxLength: number): (input: string) => ParseResult {
   return (input) => {
     const value = input.trim();

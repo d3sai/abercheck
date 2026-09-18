@@ -7,11 +7,8 @@ const order = (overrides: Partial<Order> = {}): Order => ({
   id: 1,
   orderNumber: '0000-067968',
   clientName: 'ФОП Берчатова Лариса',
-  clientPhone: null,
   amountDue: d('170.10'),
   exchangeRate: null,
-  invoiceNumber: null,
-  requisites: null,
   comment: null,
   status: 'AWAITING_PAYMENT',
   managerId: 7,
@@ -50,14 +47,10 @@ describe('adminOrderCreatedMessage', () => {
     );
   });
 
-  it('should add the rate without trailing zeros and the phone when present', () => {
-    const message = adminOrderCreatedMessage(
-      order({ exchangeRate: d('44.9000'), clientPhone: '+380501234567' }),
-      manager,
-    );
+  it('should add the rate without trailing zeros', () => {
+    const message = adminOrderCreatedMessage(order({ exchangeRate: d('44.9000') }), manager);
 
     expect(message).toContain('Курс: 44,9\n');
-    expect(message).toContain('Телефон: +380501234567\n');
   });
 
   it('should show a whole-number rate without a decimal part', () => {
@@ -66,13 +59,9 @@ describe('adminOrderCreatedMessage', () => {
     expect(message).toContain('Курс: 45\n');
   });
 
-  it('should escape HTML in the client name and phone', () => {
-    const message = adminOrderCreatedMessage(
-      order({ clientName: '<b>Клієнт</b>', clientPhone: '<script>' }),
-      manager,
-    );
+  it('should escape HTML in the client name', () => {
+    const message = adminOrderCreatedMessage(order({ clientName: '<b>Клієнт</b>' }), manager);
 
     expect(message).toContain('Клієнт: &lt;b&gt;Клієнт&lt;/b&gt;');
-    expect(message).toContain('Телефон: &lt;script&gt;');
   });
 });
