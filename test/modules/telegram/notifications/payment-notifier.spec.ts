@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { MatchType, OrderStatus, Prisma } from '../../../../src/generated/prisma/client';
+import { MatchType, OrderStatus, OrderType, Prisma } from '../../../../src/generated/prisma/client';
 import type { PaymentRecorded } from '../../../../src/modules/payments/payment-ingestion.types';
 import { PrismaService } from '../../../../src/common/prisma/prisma.service';
 import { TelegramSender } from '../../../../src/modules/telegram/core/telegram-sender';
@@ -38,6 +38,7 @@ describe('PaymentNotifier', () => {
       amountDue: new Prisma.Decimal('3000'),
       exchangeRate: null,
       comment: null,
+      orderType: OrderType.REGULAR,
       status,
       managerId: 7,
       createdAt: new Date(),

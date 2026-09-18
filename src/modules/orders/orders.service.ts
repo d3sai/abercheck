@@ -14,7 +14,7 @@ import type { Initiator } from '../refunds/refund.events';
 import type { CreateOrderDto } from './dto/create-order.dto';
 import type { UpdateOrderDto } from './dto/update-order.dto';
 import { lockOrderByNumber, netPaid } from './order-ledger';
-import { normalizeOrderNumber } from './order-number';
+import { generateClosingOrderNumber, normalizeOrderNumber } from './order-number';
 import { type OrderCreated, OrderEvents } from './order.events';
 import { calculateOrderStatus, UNPAID_STATUSES } from './order-status';
 import { OrderNotFoundError, OrderNumberTakenError } from './orders.errors';
@@ -65,7 +65,9 @@ export class OrdersService {
   ) {}
 
   async create(managerId: number, dto: CreateOrderDto): Promise<Order> {
-    const orderNumber = normalizeOrderNumber(dto.orderNumber);
+    const orderNumber = dto.orderNumber
+      ? normalizeOrderNumber(dto.orderNumber)
+      : generateClosingOrderNumber();
     let order: Order;
     try {
       order = await this.prisma.order.create({ data: { ...dto, orderNumber, managerId } });

@@ -1,4 +1,4 @@
-import type { Manager, Order, Prisma } from '../../../generated/prisma/client';
+import { type Manager, type Order, OrderType, type Prisma } from '../../../generated/prisma/client';
 import { escapeHtml, formatKyivDateTime, formatMoney } from '../core/format';
 
 function formatRate(value: Prisma.Decimal): string {
@@ -6,8 +6,10 @@ function formatRate(value: Prisma.Decimal): string {
 }
 
 export function adminOrderCreatedMessage(order: Order, manager: Manager): string {
+  const title =
+    order.orderType === OrderType.MINUS_CLOSING ? '➖ <b>Закриття мінусу</b>' : '🆕 <b>Нове замовлення</b>';
   return [
-    '🆕 <b>Нове замовлення</b>',
+    title,
     `№ <b>${escapeHtml(order.orderNumber)}</b>`,
     `ФОП: ${escapeHtml(order.clientName)}`,
     `Сума: ${formatMoney(order.amountDue)} грн`,

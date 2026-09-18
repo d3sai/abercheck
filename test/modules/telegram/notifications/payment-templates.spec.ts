@@ -3,6 +3,7 @@ import {
   MatchType,
   type Order,
   OrderStatus,
+  OrderType,
   type Payment,
   Prisma,
 } from '../../../../src/generated/prisma/client';
@@ -23,6 +24,7 @@ const order = (status: OrderStatus): Order => ({
   amountDue: d('6158.41'),
   exchangeRate: d('44.9'),
   comment: null,
+  orderType: OrderType.REGULAR,
   status,
   managerId: 1,
   createdAt: new Date(),

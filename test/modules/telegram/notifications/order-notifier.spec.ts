@@ -18,6 +18,7 @@ describe('OrderNotifier', () => {
       amountDue: new Prisma.Decimal('170.10'),
       exchangeRate: null,
       comment: null,
+      orderType: 'REGULAR',
       status: 'AWAITING_PAYMENT',
       managerId: 7,
       createdAt: new Date('2026-09-12T09:57:00Z'),

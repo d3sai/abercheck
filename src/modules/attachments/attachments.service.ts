@@ -11,6 +11,13 @@ import { AttachmentNotFoundError, AttachmentStorageError } from './attachments.e
 
 type CaptionOrder = Pick<Order, 'orderNumber' | 'clientName' | 'amountDue'>;
 
+export interface TelegramFileRef {
+  fileId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+}
+
 function caption(order: CaptionOrder, uploader: Initiator): string {
   return [
     `📎 Замовлення № <b>${escapeHtml(order.orderNumber)}</b>`,
@@ -41,37 +48,71 @@ export class AttachmentsService {
   ): Promise<OrderAttachment[]> {
     const attachments: OrderAttachment[] = [];
     for (const file of files) {
-      let sent;
-      try {
-        sent = await this.bot.telegram.sendDocument(
-          this.storageChatId,
-          { source: file.buffer, filename: file.originalname },
-          { caption: caption(order, uploader), parse_mode: 'HTML' },
-        );
-      } catch (error) {
-        this.logger.error(
-          `Failed to store an attachment for order #${order.id} in Telegram`,
-          error,
-        );
-        throw new AttachmentStorageError(error);
-      }
       attachments.push(
-        await this.prisma.orderAttachment.create({
-          data: {
-            orderId: order.id,
-            filename: file.originalname,
-            mimeType: file.mimetype,
-            size: file.size,
-            telegramFileId: sent.document.file_id,
-            telegramMessageId: sent.message_id,
-            uploadedByTelegramId: uploader.telegramId,
-            uploadedByName: uploader.name,
-            keepMessageOnDelete,
-          },
-        }),
+        await this.store(
+          order,
+          uploader,
+          keepMessageOnDelete,
+          { filename: file.originalname, mimeType: file.mimetype, size: file.size },
+          () =>
+            this.bot.telegram.sendDocument(
+              this.storageChatId,
+              { source: file.buffer, filename: file.originalname },
+              { caption: caption(order, uploader), parse_mode: 'HTML' },
+            ),
+        ),
       );
     }
     return attachments;
+  }
+
+  async saveFromTelegram(
+    order: CaptionOrder & { id: number },
+    files: TelegramFileRef[],
+    uploader: Initiator,
+    keepMessageOnDelete: boolean,
+  ): Promise<OrderAttachment[]> {
+    const attachments: OrderAttachment[] = [];
+    for (const file of files) {
+      attachments.push(
+        await this.store(order, uploader, keepMessageOnDelete, file, () =>
+          this.bot.telegram.sendDocument(this.storageChatId, file.fileId, {
+            caption: caption(order, uploader),
+            parse_mode: 'HTML',
+          }),
+        ),
+      );
+    }
+    return attachments;
+  }
+
+  private async store(
+    order: CaptionOrder & { id: number },
+    uploader: Initiator,
+    keepMessageOnDelete: boolean,
+    meta: Pick<TelegramFileRef, 'filename' | 'mimeType' | 'size'>,
+    send: () => Promise<{ document: { file_id: string }; message_id: number }>,
+  ): Promise<OrderAttachment> {
+    let sent;
+    try {
+      sent = await send();
+    } catch (error) {
+      this.logger.error(`Failed to store an attachment for order #${order.id} in Telegram`, error);
+      throw new AttachmentStorageError(error);
+    }
+    return this.prisma.orderAttachment.create({
+      data: {
+        orderId: order.id,
+        filename: meta.filename,
+        mimeType: meta.mimeType,
+        size: meta.size,
+        telegramFileId: sent.document.file_id,
+        telegramMessageId: sent.message_id,
+        uploadedByTelegramId: uploader.telegramId,
+        uploadedByName: uploader.name,
+        keepMessageOnDelete,
+      },
+    });
   }
 
   list(orderId: number): Promise<OrderAttachment[]> {

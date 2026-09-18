@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TelegrafModule } from 'nestjs-telegraf';
 import type { EnvironmentVariables } from '../../common/config/env.validation';
+import { AttachmentsModule } from '../attachments/attachments.module';
 import { ManagersModule } from '../managers/managers.module';
 import { OrdersModule } from '../orders/orders.module';
 import { PaymentsModule } from '../payments/payments.module';
@@ -29,6 +30,7 @@ import { TelegramSender } from './core/telegram-sender';
         launchOptions: false,
       }),
     }),
+    AttachmentsModule,
     ManagersModule,
     OrdersModule,
     PaymentsModule,

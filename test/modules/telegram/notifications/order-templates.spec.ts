@@ -1,4 +1,9 @@
-import { type Manager, type Order, Prisma } from '../../../../src/generated/prisma/client';
+import {
+  type Manager,
+  type Order,
+  OrderType,
+  Prisma,
+} from '../../../../src/generated/prisma/client';
 import { adminOrderCreatedMessage } from '../../../../src/modules/telegram/notifications/order-templates';
 
 const d = (value: string) => new Prisma.Decimal(value);
@@ -10,6 +15,7 @@ const order = (overrides: Partial<Order> = {}): Order => ({
   amountDue: d('170.10'),
   exchangeRate: null,
   comment: null,
+  orderType: OrderType.REGULAR,
   status: 'AWAITING_PAYMENT',
   managerId: 7,
   createdAt: new Date('2026-09-12T09:57:00Z'),
@@ -75,6 +81,12 @@ describe('adminOrderCreatedMessage', () => {
     const message = adminOrderCreatedMessage(order({ comment: '<b>ок</b>' }), manager);
 
     expect(message).toContain('Коментар: &lt;b&gt;ок&lt;/b&gt;');
+  });
+
+  it('should show a distinct header for a minus-closing order', () => {
+    const message = adminOrderCreatedMessage(order({ orderType: OrderType.MINUS_CLOSING }), manager);
+
+    expect(message).toContain('➖ <b>Закриття мінусу</b>');
   });
 
   it('should omit the comment line when absent', () => {

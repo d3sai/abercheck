@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { Prisma } from '../../../generated/prisma/client';
+import {
+  ALLOWED_MIME_TYPES,
+  MAX_FILES_PER_UPLOAD,
+  MAX_FILE_SIZE_BYTES,
+} from '../../attachments/attachments.constants';
+import { AttachmentsService, type TelegramFileRef } from '../../attachments/attachments.service';
+import { OrderType, Prisma, type Manager } from '../../../generated/prisma/client';
 import { CreateOrderDto } from '../../orders/dto/create-order.dto';
 import { OrderNumberTakenError } from '../../orders/orders.errors';
 import { OrdersService } from '../../orders/orders.service';
@@ -21,48 +27,23 @@ type DraftField = keyof CreateOrderDto;
 interface FieldSpec {
   field: DraftField;
   label: string;
-  hint: string;
   optional: boolean;
   parse: (input: string) => ParseResult;
 }
 
 const FIELDS: readonly FieldSpec[] = [
-  {
-    field: 'orderNumber',
-    label: 'Номер',
-    hint: 'номер замовлення в 1С, напр. 0000-066717',
-    optional: false,
-    parse: parseOrderNumber,
-  },
-  {
-    field: 'clientName',
-    label: 'ФОП',
-    hint: 'назва або ПІБ ФОП, напр. ФОП Іванов І. І.',
-    optional: false,
-    parse: parseText(255),
-  },
-  {
-    field: 'amountDue',
-    label: 'Сума',
-    hint: 'сума до оплати в гривнях, напр. 6 158,41',
-    optional: false,
-    parse: parseMoney,
-  },
-  {
-    field: 'exchangeRate',
-    label: 'Курс',
-    hint: "курс долара, напр. 44,9 (необов'язково)",
-    optional: true,
-    parse: parseExchangeRate,
-  },
-  {
-    field: 'comment',
-    label: 'Коментар',
-    hint: "необов'язково",
-    optional: true,
-    parse: parseText(2000),
-  },
+  { field: 'orderNumber', label: 'Номер', optional: false, parse: parseOrderNumber },
+  { field: 'clientName', label: 'ФОП', optional: false, parse: parseText(255) },
+  { field: 'amountDue', label: 'Сума', optional: false, parse: parseMoney },
+  { field: 'exchangeRate', label: 'Курс', optional: true, parse: parseExchangeRate },
+  { field: 'comment', label: 'Коментар', optional: true, parse: parseText(2000) },
 ];
+
+function fieldsFor(type: OrderType): readonly FieldSpec[] {
+  return type === OrderType.MINUS_CLOSING
+    ? FIELDS.map((f) => (f.field === 'orderNumber' ? { ...f, optional: true } : f))
+    : FIELDS;
+}
 
 export const DraftAction = {
   Confirm: 'draft:confirm',
@@ -70,7 +51,9 @@ export const DraftAction = {
 } as const;
 
 interface Draft {
+  type: OrderType;
   data: Partial<Record<DraftField, string>>;
+  files: TelegramFileRef[];
 }
 
 const cancelButton = button('Скасувати', DraftAction.Cancel);
@@ -79,15 +62,18 @@ const cancelButton = button('Скасувати', DraftAction.Cancel);
 export class OrderDraftService {
   private readonly drafts = new Map<bigint, Draft>();
 
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    private readonly orders: OrdersService,
+    private readonly attachments: AttachmentsService,
+  ) {}
 
   hasDraft(userId: bigint): boolean {
     return this.drafts.has(userId);
   }
 
-  start(userId: bigint): BotReply {
-    this.drafts.set(userId, { data: {} });
-    return this.template();
+  start(userId: bigint, type: OrderType = OrderType.REGULAR): BotReply {
+    this.drafts.set(userId, { type, data: {}, files: [] });
+    return this.template(type);
   }
 
   async input(userId: bigint, text: string): Promise<BotReply | null> {
@@ -96,11 +82,12 @@ export class OrderDraftService {
       return null;
     }
 
-    const raw = parseTemplate(text, FIELDS);
+    const fields = fieldsFor(draft.type);
+    const raw = parseTemplate(text, fields);
     const data: Partial<Record<DraftField, string>> = {};
     const errors: string[] = [];
 
-    for (const field of FIELDS) {
+    for (const field of fields) {
       const value = raw[field.field]?.trim() ?? '';
       if (value.length === 0) {
         if (!field.optional) {
@@ -116,7 +103,7 @@ export class OrderDraftService {
       data[field.field] = result.value;
     }
 
-    if (errors.length === 0 && (await this.orders.findByNumber(data.orderNumber!))) {
+    if (errors.length === 0 && data.orderNumber && (await this.orders.findByNumber(data.orderNumber))) {
       errors.push(`«Номер»: замовлення № ${data.orderNumber} вже є в системі.`);
     }
 
@@ -133,19 +120,48 @@ export class OrderDraftService {
     return this.summary(draft);
   }
 
-  async confirm(userId: bigint, managerId: number): Promise<BotReply | null> {
+  addFile(userId: bigint, file: TelegramFileRef): BotReply | null {
     const draft = this.drafts.get(userId);
-    if (!draft || !FIELDS.every((f) => f.optional || draft.data[f.field] !== undefined)) {
+    if (!draft) {
       return null;
     }
-    this.drafts.delete(userId);
+    if (!ALLOWED_MIME_TYPES.has(file.mimeType)) {
+      return { html: '⚠️ Такий тип файлу не підтримується. Додайте фото, PDF або зображення.' };
+    }
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      return { html: '⚠️ Файл завеликий. Максимум 10 МБ.' };
+    }
+    if (draft.files.length >= MAX_FILES_PER_UPLOAD) {
+      return { html: `⚠️ Максимум ${MAX_FILES_PER_UPLOAD} файлів на замовлення.` };
+    }
+    draft.files.push(file);
+    return { html: `📎 Додано «${escapeHtml(file.filename)}» (${draft.files.length}/${MAX_FILES_PER_UPLOAD}).` };
+  }
 
-    const dto = plainToInstance(CreateOrderDto, draft.data);
+  async confirm(manager: Manager): Promise<BotReply | null> {
+    const draft = this.drafts.get(manager.telegramId);
+    if (
+      !draft ||
+      !fieldsFor(draft.type).every((f) => f.optional || draft.data[f.field] !== undefined)
+    ) {
+      return null;
+    }
+    this.drafts.delete(manager.telegramId);
+
+    const dto = plainToInstance(CreateOrderDto, { orderType: draft.type, ...draft.data });
     if (validateSync(dto).length > 0) {
       return { html: '⚠️ Дані замовлення некоректні. Почніть заново: /new' };
     }
     try {
-      const order = await this.orders.create(managerId, dto);
+      const order = await this.orders.create(manager.id, dto);
+      if (draft.files.length > 0) {
+        await this.attachments.saveFromTelegram(
+          order,
+          draft.files,
+          { telegramId: manager.telegramId, name: manager.name },
+          true,
+        );
+      }
       return {
         html: `✅ Замовлення № <b>${escapeHtml(order.orderNumber)}</b> створено. Я повідомлю, щойно надійде оплата.`,
       };
@@ -166,32 +182,45 @@ export class OrderDraftService {
     };
   }
 
-  private template(): BotReply {
-    const block = FIELDS.map((f) => `${f.label}: `).join('\n');
-    const hints = FIELDS.map((f) => `• ${f.label} — ${f.hint}`).join('\n');
+  private template(type: OrderType): BotReply {
+    const fields = fieldsFor(type);
+    const block = fields.map((f) => `${f.label}: `).join('\n');
+    const required = fields
+      .filter((f) => !f.optional)
+      .map((f) => f.label)
+      .join(', ');
+    const optional = fields
+      .filter((f) => f.optional)
+      .map((f) => f.label)
+      .join(', ');
+    const title = type === OrderType.MINUS_CLOSING ? 'Закриття мінусу' : 'Нове замовлення';
     return {
       html: [
-        '📝 <b>Нове замовлення</b>',
-        'Скопіюйте шаблон, заповніть і надішліть одним повідомленням:',
+        `📝 <b>${title}</b>`,
+        'Заповніть і надішліть одним повідомленням:',
         '',
         `<pre>${block}</pre>`,
-        '',
-        hints,
+        `Обов'язково: ${required}.${optional ? ` Необов'язково: ${optional}.` : ''}`,
+        `📎 Можна долучити файл окремим повідомленням (до ${MAX_FILES_PER_UPLOAD} шт.).`,
       ].join('\n'),
       buttons: [[cancelButton]],
     };
   }
 
-  private summary({ data }: Draft): BotReply {
+  private summary({ type, data, files }: Draft): BotReply {
     const display = (field: DraftField, value: string): string => {
       if (field === 'amountDue') return `${formatMoney(new Prisma.Decimal(value))} грн`;
       if (field === 'exchangeRate') return value.replace('.', ',');
       return escapeHtml(value);
     };
-    const lines = FIELDS.map(({ field, label }) => {
+    const fields = fieldsFor(type);
+    const lines = fields.map(({ field, label }) => {
       const value = data[field];
       return `${label}: ${value === undefined ? '—' : display(field, value)}`;
     });
+    if (files.length > 0) {
+      lines.push(`Файли: ${files.length}`);
+    }
     return {
       html: ['<b>Перевірте замовлення</b>', ...lines].join('\n'),
       buttons: [

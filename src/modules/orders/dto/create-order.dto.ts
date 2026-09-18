@@ -1,15 +1,29 @@
-import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import {
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
 import { MONEY_PATTERN } from '../../../common/money';
 import { Trim } from '../../../common/trim.decorator';
+import { OrderType } from '../../../generated/prisma/client';
 
 export const EXCHANGE_RATE_PATTERN = /^(?!0+(\.0+)?$)\d{1,4}(\.\d{1,4})?$/;
 
 export class CreateOrderDto {
+  @IsOptional()
+  @IsEnum(OrderType)
+  orderType?: OrderType;
+
   @Trim()
+  @ValidateIf((dto: CreateOrderDto) => dto.orderType !== OrderType.MINUS_CLOSING)
   @IsString()
   @IsNotEmpty()
   @MaxLength(64)
-  orderNumber!: string;
+  orderNumber?: string;
 
   @Trim()
   @IsString()

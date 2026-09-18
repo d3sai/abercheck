@@ -1,7 +1,8 @@
 import { Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import { Action, Command, Ctx, Help, Next, On, Start, Update } from 'nestjs-telegraf';
 import type { Context } from 'telegraf';
-import type { Manager } from '../../../generated/prisma/client';
+import type { TelegramFileRef } from '../../attachments/attachments.service';
+import { type Manager, OrderType } from '../../../generated/prisma/client';
 import { ManagersService } from '../../managers/managers.service';
 import {
   ACCESS_DECISION,
@@ -42,6 +43,7 @@ export class BotUpdate implements OnApplicationBootstrap {
     await this.sender.registerCommands(
       [
         { command: 'new', description: 'Створити замовлення' },
+        { command: 'newminus', description: 'Закрити мінус (без номера)' },
         { command: 'list', description: 'Мої відкриті замовлення' },
         { command: 'cancel', description: 'Скасувати створення замовлення' },
         { command: 'help', description: 'Що вміє бот' },
@@ -113,6 +115,13 @@ export class BotUpdate implements OnApplicationBootstrap {
     }
   }
 
+  @Command('newminus')
+  async newMinusOrder(@Ctx() ctx: Context): Promise<void> {
+    if (await this.activeManager(ctx)) {
+      await reply(ctx, this.drafts.start(BigInt(ctx.from!.id), OrderType.MINUS_CLOSING));
+    }
+  }
+
   @Command('cancel')
   async cancel(@Ctx() ctx: Context): Promise<void> {
     if (isPrivate(ctx) && ctx.from) {
@@ -142,7 +151,7 @@ export class BotUpdate implements OnApplicationBootstrap {
   @Action(DraftAction.Confirm)
   async confirmOrder(@Ctx() ctx: Context): Promise<void> {
     const manager = await this.activeManager(ctx);
-    const result = manager ? await this.drafts.confirm(manager.telegramId, manager.id) : null;
+    const result = manager ? await this.drafts.confirm(manager) : null;
     await this.answerDraftButton(ctx, result, 'Немає замовлення для підтвердження.');
   }
 
@@ -167,6 +176,53 @@ export class BotUpdate implements OnApplicationBootstrap {
       return;
     }
     const answer = await this.drafts.input(userId, ctx.text);
+    if (answer) {
+      await reply(ctx, answer);
+    }
+  }
+
+  @On('document')
+  async document(@Ctx() ctx: Context, @Next() next: Next): Promise<void> {
+    const message = ctx.message;
+    if (!message || !('document' in message)) {
+      return next();
+    }
+    await this.attachFile(ctx, {
+      fileId: message.document.file_id,
+      filename: message.document.file_name ?? 'файл',
+      mimeType: message.document.mime_type ?? 'application/octet-stream',
+      size: message.document.file_size ?? 0,
+    });
+  }
+
+  @On('photo')
+  async photo(@Ctx() ctx: Context, @Next() next: Next): Promise<void> {
+    const message = ctx.message;
+    if (!message || !('photo' in message)) {
+      return next();
+    }
+    const largest = message.photo[message.photo.length - 1]!;
+    await this.attachFile(ctx, {
+      fileId: largest.file_id,
+      filename: 'photo.jpg',
+      mimeType: 'image/jpeg',
+      size: largest.file_size ?? 0,
+    });
+  }
+
+  private async attachFile(ctx: Context, file: TelegramFileRef): Promise<void> {
+    if (!isPrivate(ctx) || !ctx.from) {
+      return;
+    }
+    const userId = BigInt(ctx.from.id);
+    if (!this.drafts.hasDraft(userId)) {
+      return;
+    }
+    if (!(await this.activeManager(ctx))) {
+      this.drafts.cancel(userId);
+      return;
+    }
+    const answer = this.drafts.addFile(userId, file);
     if (answer) {
       await reply(ctx, answer);
     }
