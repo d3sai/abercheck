@@ -21,7 +21,7 @@ const recipient = (payment: Payment) =>
 function orderHeader(order: Order): string[] {
   return [
     `Замовлення № <b>${escapeHtml(order.orderNumber)}</b>`,
-    `Клієнт: ${escapeHtml(order.clientName)}`,
+    `ФОП: ${escapeHtml(order.clientName)}`,
     `Сума замовлення: ${money(order.amountDue)}`,
   ];
 }

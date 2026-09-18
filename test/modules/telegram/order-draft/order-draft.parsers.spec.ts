@@ -2,6 +2,7 @@ import {
   parseExchangeRate,
   parseMoney,
   parseOrderNumber,
+  parseTemplate,
   parseText,
 } from '../../../../src/modules/telegram/order-draft/order-draft.parsers';
 
@@ -49,5 +50,45 @@ describe('order draft parsers', () => {
     expect(value(parse('  abc  '))).toBe('abc');
     expect(value(parse('   '))).toBeNull();
     expect(value(parse('abcdef'))).toBeNull();
+  });
+
+  describe('parseTemplate', () => {
+    const fields = [
+      { field: 'orderNumber', label: 'Номер' },
+      { field: 'clientName', label: 'ФОП' },
+      { field: 'comment', label: 'Коментар' },
+    ];
+
+    it('should map each labelled line to its field', () => {
+      const text = ['Номер: 0000-066717', 'ФОП: Чернявський Владислав', 'Коментар: '].join('\n');
+
+      expect(parseTemplate(text, fields)).toEqual({
+        orderNumber: '0000-066717',
+        clientName: 'Чернявський Владислав',
+        comment: '',
+      });
+    });
+
+    it('should capture a multi-line value up to the next label', () => {
+      const text = ['Номер: 0000-066717', 'Коментар: рядок один', 'рядок два', 'ФОП: Іванов'].join(
+        '\n',
+      );
+
+      expect(parseTemplate(text, fields)).toEqual({
+        orderNumber: '0000-066717',
+        comment: 'рядок один\nрядок два',
+        clientName: 'Іванов',
+      });
+    });
+
+    it('should ignore text before the first label and be case-insensitive', () => {
+      const text = ['щось стороннє', 'номер: 0000-066717'].join('\n');
+
+      expect(parseTemplate(text, fields)).toEqual({ orderNumber: '0000-066717' });
+    });
+
+    it('should return an empty map when no label matches', () => {
+      expect(parseTemplate('просто текст', fields)).toEqual({});
+    });
   });
 });

@@ -9,9 +9,10 @@ export function adminOrderCreatedMessage(order: Order, manager: Manager): string
   return [
     '🆕 <b>Нове замовлення</b>',
     `№ <b>${escapeHtml(order.orderNumber)}</b>`,
-    `Клієнт: ${escapeHtml(order.clientName)}`,
+    `ФОП: ${escapeHtml(order.clientName)}`,
     `Сума: ${formatMoney(order.amountDue)} грн`,
     ...(order.exchangeRate ? [`Курс: ${formatRate(order.exchangeRate)}`] : []),
+    ...(order.comment ? [`Коментар: ${escapeHtml(order.comment)}`] : []),
     '',
     `Менеджер: ${escapeHtml(manager.name)}`,
     `Створено: ${formatKyivDateTime(order.createdAt)}`,

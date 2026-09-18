@@ -12,65 +12,64 @@ import {
   parseMoney,
   parseOrderNumber,
   type ParseResult,
+  parseTemplate,
   parseText,
 } from './order-draft.parsers';
 
 type DraftField = keyof CreateOrderDto;
 
-interface DraftStep {
+interface FieldSpec {
   field: DraftField;
   label: string;
-  prompt: string;
+  hint: string;
   optional: boolean;
   parse: (input: string) => ParseResult;
 }
 
-const STEPS: readonly DraftStep[] = [
+const FIELDS: readonly FieldSpec[] = [
   {
     field: 'orderNumber',
     label: 'Номер',
-    prompt: 'Номер замовлення в 1С, напр. 0000-066717',
+    hint: 'номер замовлення в 1С, напр. 0000-066717',
     optional: false,
     parse: parseOrderNumber,
   },
   {
     field: 'clientName',
-    label: 'Клієнт',
-    prompt: 'ПІБ або назва клієнта',
+    label: 'ФОП',
+    hint: 'назва або ПІБ ФОП, напр. ФОП Іванов І. І.',
     optional: false,
     parse: parseText(255),
   },
   {
     field: 'amountDue',
     label: 'Сума',
-    prompt: 'Сума до оплати в гривнях, напр. 6 158,41',
+    hint: 'сума до оплати в гривнях, напр. 6 158,41',
     optional: false,
     parse: parseMoney,
   },
   {
     field: 'exchangeRate',
     label: 'Курс',
-    prompt: 'Курс долара, напр. 44,9',
+    hint: "курс долара, напр. 44,9 (необов'язково)",
     optional: true,
     parse: parseExchangeRate,
   },
   {
     field: 'comment',
     label: 'Коментар',
-    prompt: 'Коментар до замовлення',
+    hint: "необов'язково",
     optional: true,
     parse: parseText(2000),
   },
 ];
 
 export const DraftAction = {
-  Skip: 'draft:skip',
   Confirm: 'draft:confirm',
   Cancel: 'draft:cancel',
 } as const;
 
 interface Draft {
-  step: number;
   data: Partial<Record<DraftField, string>>;
 }
 
@@ -87,9 +86,8 @@ export class OrderDraftService {
   }
 
   start(userId: bigint): BotReply {
-    const draft: Draft = { step: 0, data: {} };
-    this.drafts.set(userId, draft);
-    return this.prompt(draft);
+    this.drafts.set(userId, { data: {} });
+    return this.template();
   }
 
   async input(userId: bigint, text: string): Promise<BotReply | null> {
@@ -97,37 +95,47 @@ export class OrderDraftService {
     if (!draft) {
       return null;
     }
-    const step = STEPS[draft.step];
-    if (!step) {
-      return { ...this.summary(draft), html: 'Натисніть «Створити» або «Скасувати».' };
+
+    const raw = parseTemplate(text, FIELDS);
+    const data: Partial<Record<DraftField, string>> = {};
+    const errors: string[] = [];
+
+    for (const field of FIELDS) {
+      const value = raw[field.field]?.trim() ?? '';
+      if (value.length === 0) {
+        if (!field.optional) {
+          errors.push(`«${field.label}» — поле обов'язкове.`);
+        }
+        continue;
+      }
+      const result = field.parse(value);
+      if (!result.ok) {
+        errors.push(`«${field.label}»: ${result.error}`);
+        continue;
+      }
+      data[field.field] = result.value;
     }
 
-    const result = step.parse(text);
-    if (!result.ok) {
-      return { html: `⚠️ ${escapeHtml(result.error)}`, buttons: this.prompt(draft).buttons };
+    if (errors.length === 0 && (await this.orders.findByNumber(data.orderNumber!))) {
+      errors.push(`«Номер»: замовлення № ${data.orderNumber} вже є в системі.`);
     }
-    if (step.field === 'orderNumber' && (await this.orders.findByNumber(result.value))) {
+
+    if (errors.length > 0) {
       return {
-        html: `⚠️ Замовлення № ${escapeHtml(result.value)} вже є в системі. Вкажіть інший номер.`,
+        html: ['⚠️ Виправте та надішліть шаблон ще раз:', ...errors.map((e) => `• ${e}`)].join(
+          '\n',
+        ),
         buttons: [[cancelButton]],
       };
     }
 
-    draft.data[step.field] = result.value;
-    return this.advance(draft);
-  }
-
-  skip(userId: bigint): BotReply | null {
-    const draft = this.drafts.get(userId);
-    if (!draft || !STEPS[draft.step]?.optional) {
-      return null;
-    }
-    return this.advance(draft);
+    draft.data = data;
+    return this.summary(draft);
   }
 
   async confirm(userId: bigint, managerId: number): Promise<BotReply | null> {
     const draft = this.drafts.get(userId);
-    if (!draft || draft.step < STEPS.length) {
+    if (!draft || !FIELDS.every((f) => f.optional || draft.data[f.field] !== undefined)) {
       return null;
     }
     this.drafts.delete(userId);
@@ -158,20 +166,19 @@ export class OrderDraftService {
     };
   }
 
-  private advance(draft: Draft): BotReply {
-    draft.step += 1;
-    return draft.step < STEPS.length ? this.prompt(draft) : this.summary(draft);
-  }
-
-  private prompt(draft: Draft): BotReply {
-    const step = STEPS[draft.step]!;
-    const position = `<b>${draft.step + 1}/${STEPS.length}.</b>`;
-    const buttons = step.optional
-      ? [[button('Пропустити', DraftAction.Skip), cancelButton]]
-      : [[cancelButton]];
+  private template(): BotReply {
+    const block = FIELDS.map((f) => `${f.label}: `).join('\n');
+    const hints = FIELDS.map((f) => `• ${f.label} — ${f.hint}`).join('\n');
     return {
-      html: `${position} ${step.prompt}${step.optional ? " (необов'язково)" : ''}:`,
-      buttons,
+      html: [
+        '📝 <b>Нове замовлення</b>',
+        'Скопіюйте шаблон, заповніть і надішліть одним повідомленням:',
+        '',
+        `<pre>${block}</pre>`,
+        '',
+        hints,
+      ].join('\n'),
+      buttons: [[cancelButton]],
     };
   }
 
@@ -181,7 +188,7 @@ export class OrderDraftService {
       if (field === 'exchangeRate') return value.replace('.', ',');
       return escapeHtml(value);
     };
-    const lines = STEPS.map(({ field, label }) => {
+    const lines = FIELDS.map(({ field, label }) => {
       const value = data[field];
       return `${label}: ${value === undefined ? '—' : display(field, value)}`;
     });

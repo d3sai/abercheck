@@ -14,7 +14,7 @@ type CaptionOrder = Pick<Order, 'orderNumber' | 'clientName' | 'amountDue'>;
 function caption(order: CaptionOrder, uploader: Initiator): string {
   return [
     `📎 Замовлення № <b>${escapeHtml(order.orderNumber)}</b>`,
-    `Клієнт: ${escapeHtml(order.clientName)}`,
+    `ФОП: ${escapeHtml(order.clientName)}`,
     `Сума до оплати: ${formatMoney(order.amountDue)} грн`,
     `Додав: ${escapeHtml(uploader.name)}`,
   ].join('\n');

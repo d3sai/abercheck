@@ -43,3 +43,30 @@ export function parseText(maxLength: number): (input: string) => ParseResult {
     return value.length <= maxLength ? ok(value) : fail(`Не більше ${maxLength} символів.`);
   };
 }
+
+export interface TemplateField {
+  field: string;
+  label: string;
+}
+
+export function parseTemplate(
+  text: string,
+  fields: readonly TemplateField[],
+): Record<string, string> {
+  const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const labelPattern = fields.map((f) => escapeRegExp(f.label)).join('|');
+  const re = new RegExp(`^[ \\t]*(${labelPattern})[ \\t]*:[ \\t]*`, 'gim');
+  const matches = [...text.matchAll(re)];
+
+  const result: Record<string, string> = {};
+  matches.forEach((match, index) => {
+    const field = fields.find((f) => f.label.toLowerCase() === match[1]!.toLowerCase())?.field;
+    if (!field) {
+      return;
+    }
+    const start = match.index + match[0].length;
+    const end = index + 1 < matches.length ? matches[index + 1]!.index : text.length;
+    result[field] = text.slice(start, end).trim();
+  });
+  return result;
+}

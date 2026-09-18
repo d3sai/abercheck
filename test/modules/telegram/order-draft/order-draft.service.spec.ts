@@ -15,12 +15,19 @@ describe('OrderDraftService', () => {
   const buttonData = (reply: BotReply | null) =>
     reply?.buttons?.flat().map((b) => ('callback_data' in b ? b.callback_data : undefined));
 
-  async function fillRequired(): Promise<void> {
-    service.start(USER);
-    await service.input(USER, '№А 0000-066717');
-    await service.input(USER, 'Чернявський Владислав');
-    await service.input(USER, '6 158,41 грн');
-  }
+  const template = (overrides: Partial<Record<string, string>> = {}): string => {
+    const fields = {
+      Номер: '0000-066717',
+      ФОП: 'Чернявський Владислав',
+      Сума: '6 158,41',
+      Курс: '44,9',
+      Коментар: 'Терміново',
+      ...overrides,
+    };
+    return Object.entries(fields)
+      .map(([label, value]) => `${label}: ${value}`)
+      .join('\n');
+  };
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -33,58 +40,54 @@ describe('OrderDraftService', () => {
 
   afterEach(() => jest.resetAllMocks());
 
-  it('should start with the order number and offer only cancel on a required step', () => {
+  it('should start with a fillable template and only a cancel button', () => {
     const reply = service.start(USER);
 
-    expect(reply.html).toContain('1/5');
-    expect(reply.html).toContain('0000-066717');
+    expect(reply.html).toContain('Номер: ');
+    expect(reply.html).toContain('ФОП: ');
     expect(buttonData(reply)).toEqual([DraftAction.Cancel]);
   });
 
   it('should ignore text when no draft is active', async () => {
-    await expect(service.input(USER, 'hello')).resolves.toBeNull();
+    await expect(service.input(USER, template())).resolves.toBeNull();
   });
 
-  it('should keep the step and explain the format on invalid input', async () => {
+  it('should list every validation error and ask to resend the template', async () => {
     service.start(USER);
 
-    const reply = await service.input(USER, '1548');
+    const reply = await service.input(USER, template({ Номер: '1548', ФОП: '', Сума: 'сто' }));
 
-    expect(reply?.html).toContain('0000-066717');
-    const next = await service.input(USER, '0000-066717');
-    expect(next?.html).toContain('2/5');
+    expect(reply?.html).toContain('«Номер»');
+    expect(reply?.html).toContain('«ФОП» — поле');
+    expect(reply?.html).toContain('«Сума»');
+    expect(buttonData(reply)).toEqual([DraftAction.Cancel]);
   });
 
   it('should reject an order number that already exists', async () => {
     orders.findByNumber.mockResolvedValue({ id: 1 });
     service.start(USER);
 
-    const reply = await service.input(USER, '0000-066717');
+    const reply = await service.input(USER, template());
 
     expect(reply?.html).toContain('вже є в системі');
-    orders.findByNumber.mockResolvedValue(null);
-    const next = await service.input(USER, '0000-066718');
-    expect(next?.html).toContain('2/5');
+    expect(buttonData(reply)).toEqual([DraftAction.Cancel]);
   });
 
-  it('should offer skip on optional steps and not on required ones', async () => {
+  it('should treat blank optional fields as omitted', async () => {
     service.start(USER);
-    expect(service.skip(USER)).toBeNull();
 
-    await fillRequired();
+    const reply = await service.input(USER, template({ Курс: '', Коментар: '' }));
 
-    const skipped = service.skip(USER);
-    expect(skipped?.html).toContain('5/5');
-    expect(buttonData(skipped)).toEqual([DraftAction.Skip, DraftAction.Cancel]);
+    expect(reply?.html).toContain('Курс: —');
+    expect(reply?.html).toContain('Коментар: —');
   });
 
   it('should show a summary with normalized values and create the order on confirm', async () => {
-    await fillRequired();
-    await service.input(USER, '44,9%');
-    service.skip(USER);
+    service.start(USER);
 
-    const summary = await service.input(USER, 'ще текст');
-    expect(summary?.html).toContain('Натисніть');
+    const summary = await service.input(USER, template());
+    expect(summary?.html).toContain('Перевірте замовлення');
+    expect(buttonData(summary)).toEqual([DraftAction.Confirm, DraftAction.Cancel]);
 
     orders.create.mockResolvedValue({ orderNumber: '0000-066717' });
     const done = await service.confirm(USER, 7);
@@ -94,28 +97,27 @@ describe('OrderDraftService', () => {
       clientName: 'Чернявський Владислав',
       amountDue: '6158.41',
       exchangeRate: '44.9',
+      comment: 'Терміново',
     });
     expect(done?.html).toContain('створено');
     expect(service.hasDraft(USER)).toBe(false);
   });
 
   it("should render the summary in the managers' format", async () => {
-    await fillRequired();
-    await service.input(USER, '44,9');
+    service.start(USER);
 
-    const summary = service.skip(USER);
+    const summary = await service.input(USER, template());
 
     expect(summary?.html).toBe(
       [
         '<b>Перевірте замовлення</b>',
         'Номер: 0000-066717',
-        'Клієнт: Чернявський Владислав',
+        'ФОП: Чернявський Владислав',
         'Сума: 6 158,41 грн',
         'Курс: 44,9',
-        'Коментар: —',
+        'Коментар: Терміново',
       ].join('\n'),
     );
-    expect(buttonData(summary)).toEqual([DraftAction.Confirm, DraftAction.Cancel]);
   });
 
   it('should not confirm an unfinished draft', async () => {
@@ -126,8 +128,8 @@ describe('OrderDraftService', () => {
   });
 
   it('should report a number taken between the check and the confirmation', async () => {
-    await fillRequired();
-    for (let i = 0; i < 2; i++) service.skip(USER);
+    service.start(USER);
+    await service.input(USER, template());
     orders.create.mockRejectedValue(new OrderNumberTakenError('0000-066717'));
 
     const reply = await service.confirm(USER, 7);

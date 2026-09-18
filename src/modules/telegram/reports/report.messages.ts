@@ -40,7 +40,7 @@ export function underpaidMessage({ order, amountPaid }: OrderWithPaid<OrderWithM
   return [
     '🔴 <b>Недоплата</b>',
     `Замовлення № <b>${escapeHtml(order.orderNumber)}</b>`,
-    `Клієнт: ${escapeHtml(order.clientName)}`,
+    `ФОП: ${escapeHtml(order.clientName)}`,
     `Сума замовлення: ${formatMoney(order.amountDue)} грн`,
     `Сплачено: ${formatMoney(amountPaid)} грн`,
     `Залишок: ${formatMoney(order.amountDue.minus(amountPaid))} грн`,

@@ -6,7 +6,7 @@ export function managerRefundMessage({ refund, order, amountPaid }: RefundRecord
   return [
     '↩️ <b>Оформлено повернення</b>',
     `Замовлення № <b>${escapeHtml(order.orderNumber)}</b>`,
-    `Клієнт: ${escapeHtml(order.clientName)}`,
+    `ФОП: ${escapeHtml(order.clientName)}`,
     `Сума замовлення: ${formatMoney(order.amountDue)} грн`,
     `Повернено: ${formatMoney(refund.amount)} грн`,
     `Сплачено чистими: ${formatMoney(amountPaid)} грн`,
@@ -19,7 +19,7 @@ export function managerCancelMessage({ order, initiator }: OrderCancelled): stri
   return [
     '❌ <b>Замовлення скасовано</b>',
     `Замовлення № <b>${escapeHtml(order.orderNumber)}</b>`,
-    `Клієнт: ${escapeHtml(order.clientName)}`,
+    `ФОП: ${escapeHtml(order.clientName)}`,
     `Скасував(ла): ${escapeHtml(initiator.name)}`,
   ].join('\n');
 }

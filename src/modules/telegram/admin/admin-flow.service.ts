@@ -98,7 +98,7 @@ export class AdminFlowService {
     return {
       html: [
         `🔗 Прив'язати платіж ${paymentSummary(payment)} до замовлення № <b>${escapeHtml(order.orderNumber)}</b>?`,
-        `Клієнт: ${escapeHtml(order.clientName)} · менеджер ${escapeHtml(order.manager.name)}`,
+        `ФОП: ${escapeHtml(order.clientName)} · менеджер ${escapeHtml(order.manager.name)}`,
         `Сума замовлення: ${money(order.amountDue)} · сплачено ${money(amountPaid)}`,
         `Після прив'язки: сплачено ${money(after)} → ${statusLabel(calculateOrderStatus(order.amountDue, after, order.status))}`,
       ].join('\n'),
@@ -137,7 +137,7 @@ export class AdminFlowService {
     const { order, amountPaid } = found;
     const lines = [
       `↩️ <b>Повернення · № ${escapeHtml(order.orderNumber)}</b>`,
-      `Клієнт: ${escapeHtml(order.clientName)} · менеджер ${escapeHtml(order.manager.name)}`,
+      `ФОП: ${escapeHtml(order.clientName)} · менеджер ${escapeHtml(order.manager.name)}`,
       `Сума замовлення: ${money(order.amountDue)}`,
       `Сплачено: ${money(amountPaid)}`,
       `Статус: ${statusLabel(order.status)}`,

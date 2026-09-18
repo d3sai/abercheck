@@ -139,12 +139,6 @@ export class BotUpdate implements OnApplicationBootstrap {
     this.logger.log(`Manager #${manager.id} ${manager.status} by ${ctx.from?.id}`);
   }
 
-  @Action(DraftAction.Skip)
-  async skipStep(@Ctx() ctx: Context): Promise<void> {
-    const next = ctx.from ? this.drafts.skip(BigInt(ctx.from.id)) : null;
-    await this.answerDraftButton(ctx, next, "Цей крок обов'язковий.");
-  }
-
   @Action(DraftAction.Confirm)
   async confirmOrder(@Ctx() ctx: Context): Promise<void> {
     const manager = await this.activeManager(ctx);
