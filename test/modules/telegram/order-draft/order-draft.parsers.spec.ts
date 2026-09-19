@@ -1,5 +1,6 @@
 import {
   parseExchangeRate,
+  parseFreeform,
   parseMoney,
   parseOrderNumber,
   parseTemplate,
@@ -89,6 +90,60 @@ describe('order draft parsers', () => {
 
     it('should return an empty map when no label matches', () => {
       expect(parseTemplate('просто текст', fields)).toEqual({});
+    });
+  });
+
+  describe('parseFreeform', () => {
+    it('should read number, name, amount, rate and comment by shape, one per line', () => {
+      const text = ['1234-567890', 'Тест Тест Тест', '1000 грн', '48', 'коментар'].join('\n');
+
+      expect(parseFreeform(text)).toEqual({
+        orderNumber: '1234-567890',
+        clientName: 'Тест Тест Тест',
+        amountDue: '1000 грн',
+        exchangeRate: '48',
+        comment: 'коментар',
+      });
+    });
+
+    it('should treat a missing order number as a minus-closing order', () => {
+      const text = ['Тест Тест Тест', '1000 грн', '48', 'коментар'].join('\n');
+
+      expect(parseFreeform(text)).toEqual(
+        expect.objectContaining({ clientName: 'Тест Тест Тест', amountDue: '1000 грн' }),
+      );
+      expect(parseFreeform(text)).not.toHaveProperty('orderNumber');
+    });
+
+    it('should work with only the required lines', () => {
+      const text = ['Тест Тест Тест', '1000 грн'].join('\n');
+
+      expect(parseFreeform(text)).toEqual({ clientName: 'Тест Тест Тест', amountDue: '1000 грн' });
+    });
+
+    it('should treat a non-numeric line after the amount as the start of the comment', () => {
+      const text = ['Тест Тест Тест', '1000 грн', 'Терміново, дзвонити з ранку'].join('\n');
+
+      expect(parseFreeform(text)).toEqual({
+        clientName: 'Тест Тест Тест',
+        amountDue: '1000 грн',
+        comment: 'Терміново, дзвонити з ранку',
+      });
+    });
+
+    it('should join a multi-line name and a multi-line comment', () => {
+      const text = ['ТОВ', 'Ромашка', '1000 грн', 'рядок один', 'рядок два'].join('\n');
+
+      expect(parseFreeform(text)).toEqual({
+        clientName: 'ТОВ Ромашка',
+        amountDue: '1000 грн',
+        comment: 'рядок один\nрядок два',
+      });
+    });
+
+    it('should return null when nothing reads as an amount', () => {
+      expect(parseFreeform(['1234-567890', 'Тест Тест Тест'].join('\n'))).toBeNull();
+      expect(parseFreeform('просто повідомлення без сум')).toBeNull();
     });
   });
 });

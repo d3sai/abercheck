@@ -70,3 +70,39 @@ export function parseTemplate(
   });
   return result;
 }
+
+const ORDER_NUMBER_SHAPE = /^[№#]?\s*\d[\d\s]*-\s*\d[\d\s]*$/;
+
+export function parseFreeform(text: string): Record<string, string> | null {
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  const amountIndex = lines.findIndex((line) => parseMoney(line).ok);
+  if (amountIndex === -1) {
+    return null;
+  }
+
+  const result: Record<string, string> = {};
+  let nameStart = 0;
+  if (amountIndex > 0 && ORDER_NUMBER_SHAPE.test(lines[0]!)) {
+    result.orderNumber = lines[0]!;
+    nameStart = 1;
+  }
+
+  result.clientName = lines.slice(nameStart, amountIndex).join(' ').trim();
+  result.amountDue = lines[amountIndex]!;
+
+  const rest = lines.slice(amountIndex + 1);
+  let commentStart = 0;
+  if (rest.length > 0 && parseExchangeRate(rest[0]!).ok) {
+    result.exchangeRate = rest[0]!;
+    commentStart = 1;
+  }
+  if (commentStart < rest.length) {
+    result.comment = rest.slice(commentStart).join('\n');
+  }
+
+  return result;
+}

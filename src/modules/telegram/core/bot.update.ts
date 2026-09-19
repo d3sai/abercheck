@@ -1,38 +1,21 @@
-import { Logger, type OnApplicationBootstrap } from '@nestjs/common';
-import { Action, Command, Ctx, Help, Next, On, Start, Update } from 'nestjs-telegraf';
+import type { OnApplicationBootstrap } from '@nestjs/common';
+import { Command, Ctx, Help, Next, On, Start, Update } from 'nestjs-telegraf';
 import type { Context } from 'telegraf';
 import type { TelegramFileRef } from '../../attachments/attachments.service';
-import { type Manager, ManagerStatus, OrderType } from '../../../generated/prisma/client';
+import { type Manager, OrderType } from '../../../generated/prisma/client';
 import { ManagersService } from '../../managers/managers.service';
-import {
-  ACCESS_DECISION,
-  accessRequest,
-  decidedAccessRequest,
-  decisionNotice,
-  HELP,
-  NOT_A_MANAGER,
-  startReply,
-} from '../access/access.messages';
+import { HELP, NOT_A_MANAGER, newManagerNotice, startReply } from '../access/access.messages';
 import { ADMIN_HELP } from '../admin/admin.update';
-import type { BotReply } from './bot-reply';
 import { MENU_LABEL } from './menu';
 import { OrderListService } from '../orders-list/order-list.service';
-import { DraftAction, OrderDraftService } from '../order-draft/order-draft.service';
-import {
-  type CommandContext,
-  fullName,
-  isPrivate,
-  type MatchContext,
-  reply,
-} from './telegram-context';
+import { OrderDraftService } from '../order-draft/order-draft.service';
+import { type CommandContext, fullName, isPrivate, reply } from './telegram-context';
 import { TelegramSender } from './telegram-sender';
 
 type Next = () => Promise<void>;
 
 @Update()
 export class BotUpdate implements OnApplicationBootstrap {
-  private readonly logger = new Logger(BotUpdate.name);
-
   constructor(
     private readonly managers: ManagersService,
     private readonly drafts: OrderDraftService,
@@ -43,10 +26,10 @@ export class BotUpdate implements OnApplicationBootstrap {
   async onApplicationBootstrap(): Promise<void> {
     await this.sender.registerCommands(
       [
-        { command: 'new', description: 'Створити замовлення' },
-        { command: 'newminus', description: 'Закрити мінус (без номера)' },
+        { command: 'new', description: 'Формат нового замовлення' },
+        { command: 'newminus', description: 'Формат закриття мінусу (без номера)' },
         { command: 'list', description: 'Мої відкриті замовлення' },
-        { command: 'cancel', description: 'Скасувати створення замовлення' },
+        { command: 'cancel', description: 'Забути прикріплені файли' },
         { command: 'help', description: 'Що вміє бот' },
       ],
       { type: 'all_private_chats' },
@@ -74,10 +57,9 @@ export class BotUpdate implements OnApplicationBootstrap {
       username: ctx.from.username ?? null,
     });
     if (isNew) {
-      const request = accessRequest(manager);
-      await this.sender.sendToAdmins(request.html, request.buttons);
+      await this.sender.sendToAdmins(newManagerNotice(manager));
     }
-    await reply(ctx, startReply(manager, isNew));
+    await reply(ctx, startReply(manager));
   }
 
   @Help()
@@ -112,14 +94,14 @@ export class BotUpdate implements OnApplicationBootstrap {
   @Command('new')
   async newOrder(@Ctx() ctx: Context): Promise<void> {
     if (await this.activeManager(ctx)) {
-      await reply(ctx, this.drafts.start(BigInt(ctx.from!.id)));
+      await reply(ctx, this.drafts.hint(OrderType.REGULAR));
     }
   }
 
   @Command('newminus')
   async newMinusOrder(@Ctx() ctx: Context): Promise<void> {
     if (await this.activeManager(ctx)) {
-      await reply(ctx, this.drafts.start(BigInt(ctx.from!.id), OrderType.MINUS_CLOSING));
+      await reply(ctx, this.drafts.hint(OrderType.MINUS_CLOSING));
     }
   }
 
@@ -128,43 +110,6 @@ export class BotUpdate implements OnApplicationBootstrap {
     if (isPrivate(ctx) && ctx.from) {
       await reply(ctx, this.drafts.cancel(BigInt(ctx.from.id)));
     }
-  }
-
-  @Action(ACCESS_DECISION)
-  async decideAccess(@Ctx() ctx: MatchContext): Promise<void> {
-    if (ctx.chat?.id !== this.sender.adminChatId) {
-      await ctx.answerCbQuery('Заявки розглядають в адмінському чаті.');
-      return;
-    }
-    const [, action, id] = ctx.match;
-    const manager = await this.managers.decide(Number(id), action === 'approve');
-    if (!manager) {
-      await ctx.answerCbQuery('Заявку вже розглянуто.');
-      return;
-    }
-
-    await ctx.editMessageText(decidedAccessRequest(manager, fullName(ctx)), { parse_mode: 'HTML' });
-    await ctx.answerCbQuery(action === 'approve' ? 'Доступ надано' : 'Заявку відхилено');
-    await this.sender.send(
-      manager.telegramId,
-      decisionNotice(manager),
-      undefined,
-      manager.status === ManagerStatus.ACTIVE,
-    );
-    this.logger.log(`Manager #${manager.id} ${manager.status} by ${ctx.from?.id}`);
-  }
-
-  @Action(DraftAction.Confirm)
-  async confirmOrder(@Ctx() ctx: Context): Promise<void> {
-    const manager = await this.activeManager(ctx);
-    const result = manager ? await this.drafts.confirm(manager) : null;
-    await this.answerDraftButton(ctx, result, 'Немає замовлення для підтвердження.');
-  }
-
-  @Action(DraftAction.Cancel)
-  async cancelDraft(@Ctx() ctx: Context): Promise<void> {
-    const result = ctx.from ? this.drafts.cancel(BigInt(ctx.from.id)) : null;
-    await this.answerDraftButton(ctx, result, '');
   }
 
   @On('text')
@@ -182,19 +127,12 @@ export class BotUpdate implements OnApplicationBootstrap {
       case MENU_LABEL.Cancel:
         return this.cancel(ctx);
     }
-    const userId = BigInt(ctx.from.id);
-    if (!this.drafts.hasDraft(userId)) {
-      await reply(ctx, { html: HELP, menu: true });
+    const manager = await this.activeManager(ctx);
+    if (!manager) {
       return;
     }
-    if (!(await this.activeManager(ctx))) {
-      this.drafts.cancel(userId);
-      return;
-    }
-    const answer = await this.drafts.input(userId, ctx.text);
-    if (answer) {
-      await reply(ctx, answer);
-    }
+    const answer = await this.drafts.handleText(manager, ctx.text);
+    await reply(ctx, answer ?? { html: HELP, menu: true });
   }
 
   @On('document')
@@ -210,6 +148,7 @@ export class BotUpdate implements OnApplicationBootstrap {
         filename: message.document.file_name ?? 'файл',
         mimeType: message.document.mime_type ?? 'application/octet-stream',
         size: message.document.file_size ?? 0,
+        kind: 'document',
       },
       message.caption,
     );
@@ -229,40 +168,18 @@ export class BotUpdate implements OnApplicationBootstrap {
         filename: 'photo.jpg',
         mimeType: 'image/jpeg',
         size: largest.file_size ?? 0,
+        kind: 'photo',
       },
       message.caption,
     );
   }
 
   private async attachFile(ctx: Context, file: TelegramFileRef, caption?: string): Promise<void> {
-    if (!isPrivate(ctx) || !ctx.from) {
+    const manager = await this.activeManager(ctx);
+    if (!manager) {
       return;
     }
-    const userId = BigInt(ctx.from.id);
-    if (!this.drafts.hasDraft(userId)) {
-      return;
-    }
-    if (!(await this.activeManager(ctx))) {
-      this.drafts.cancel(userId);
-      return;
-    }
-    const answer = await this.drafts.addFile(userId, file, caption);
-    if (answer) {
-      await reply(ctx, answer);
-    }
-  }
-
-  private async answerDraftButton(
-    ctx: Context,
-    result: BotReply | null,
-    notice: string,
-  ): Promise<void> {
-    await ctx.answerCbQuery(result ? undefined : notice || undefined);
-    if (!result) {
-      return;
-    }
-    await ctx.editMessageReplyMarkup(undefined).catch(() => undefined);
-    await reply(ctx, result);
+    await reply(ctx, await this.drafts.addFile(manager, file, caption));
   }
 
   private async activeManager(ctx: Context): Promise<Manager | null> {

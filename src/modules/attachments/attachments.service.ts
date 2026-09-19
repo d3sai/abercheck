@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectBot } from 'nestjs-telegraf';
 import { Telegraf } from 'telegraf';
-import type { Message } from 'telegraf/types';
+import type { Convenience, Message } from 'telegraf/types';
 import type { EnvironmentVariables } from '../../common/config/env.validation';
 import type { Order, OrderAttachment } from '../../generated/prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -17,6 +17,13 @@ export interface TelegramFileRef {
   filename: string;
   mimeType: string;
   size: number;
+  kind: 'photo' | 'document';
+}
+
+type SentMedia = Message.DocumentMessage | Message.PhotoMessage;
+
+function fileIdOf(sent: SentMedia): string {
+  return 'document' in sent ? sent.document.file_id : sent.photo[sent.photo.length - 1]!.file_id;
 }
 
 function caption(order: CaptionOrder, uploader: Initiator): string {
@@ -77,31 +84,65 @@ export class AttachmentsService {
     if (files.length === 0) {
       return [];
     }
+
+    const groups = (['photo', 'document'] as const)
+      .map((kind) => ({ kind, files: files.filter((f) => f.kind === kind) }))
+      .filter((group) => group.files.length > 0);
+
+    const attachments: OrderAttachment[] = [];
+    for (const [index, group] of groups.entries()) {
+      const captionText =
+        index === groups.length - 1 ? (groupCaption ?? caption(order, uploader)) : undefined;
+      attachments.push(
+        ...(await this.saveGroup(
+          order,
+          uploader,
+          keepMessageOnDelete,
+          group.kind,
+          group.files,
+          captionText,
+        )),
+      );
+    }
+    return attachments;
+  }
+
+  private async saveGroup(
+    order: CaptionOrder & { id: number },
+    uploader: Initiator,
+    keepMessageOnDelete: boolean,
+    kind: 'photo' | 'document',
+    files: TelegramFileRef[],
+    captionText: string | undefined,
+  ): Promise<OrderAttachment[]> {
     if (files.length === 1) {
       const file = files[0]!;
       return [
         await this.store(order, uploader, keepMessageOnDelete, file, () =>
-          this.bot.telegram.sendDocument(this.storageChatId, file.fileId, {
-            caption: groupCaption ?? caption(order, uploader),
-            parse_mode: 'HTML',
-          }),
+          kind === 'photo'
+            ? this.bot.telegram.sendPhoto(this.storageChatId, file.fileId, {
+                caption: captionText,
+                parse_mode: 'HTML',
+              })
+            : this.bot.telegram.sendDocument(this.storageChatId, file.fileId, {
+                caption: captionText,
+                parse_mode: 'HTML',
+              }),
         ),
       ];
     }
 
     // One album message; the caption sits on the last file so it reads as a trailing note below the whole stack.
-    let sent: Message.DocumentMessage[];
+    const media = files.map((file, index) => ({
+      type: kind,
+      media: file.fileId,
+      ...(index === files.length - 1 && captionText
+        ? { caption: captionText, parse_mode: 'HTML' as const }
+        : {}),
+    })) as unknown as Convenience.MediaGroup;
+    let sent: SentMedia[];
     try {
-      sent = (await this.bot.telegram.sendMediaGroup(
-        this.storageChatId,
-        files.map((file, index) => ({
-          type: 'document',
-          media: file.fileId,
-          ...(index === files.length - 1
-            ? { caption: groupCaption ?? caption(order, uploader), parse_mode: 'HTML' as const }
-            : {}),
-        })),
-      )) as Message.DocumentMessage[];
+      sent = (await this.bot.telegram.sendMediaGroup(this.storageChatId, media)) as SentMedia[];
     } catch (error) {
       this.logger.error(`Failed to store attachments for order #${order.id} in Telegram`, error);
       throw new AttachmentStorageError(error);
@@ -119,9 +160,9 @@ export class AttachmentsService {
     uploader: Initiator,
     keepMessageOnDelete: boolean,
     meta: Pick<TelegramFileRef, 'filename' | 'mimeType' | 'size'>,
-    send: () => Promise<{ document: { file_id: string }; message_id: number }>,
+    send: () => Promise<SentMedia>,
   ): Promise<OrderAttachment> {
-    let sent;
+    let sent: SentMedia;
     try {
       sent = await send();
     } catch (error) {
@@ -136,7 +177,7 @@ export class AttachmentsService {
     uploader: Initiator,
     keepMessageOnDelete: boolean,
     meta: Pick<TelegramFileRef, 'filename' | 'mimeType' | 'size'>,
-    sent: { document: { file_id: string }; message_id: number },
+    sent: SentMedia,
   ): Promise<OrderAttachment> {
     return this.prisma.orderAttachment.create({
       data: {
@@ -144,7 +185,7 @@ export class AttachmentsService {
         filename: meta.filename,
         mimeType: meta.mimeType,
         size: meta.size,
-        telegramFileId: sent.document.file_id,
+        telegramFileId: fileIdOf(sent),
         telegramMessageId: sent.message_id,
         uploadedByTelegramId: uploader.telegramId,
         uploadedByName: uploader.name,

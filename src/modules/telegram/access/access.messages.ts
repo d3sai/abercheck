@@ -1,49 +1,33 @@
 import { type Manager, ManagerStatus } from '../../../generated/prisma/client';
-import { type BotReply, button } from '../core/bot-reply';
+import type { BotReply } from '../core/bot-reply';
 import { escapeHtml } from '../core/format';
 
-export const ACCESS_DECISION = /^manager:(approve|reject):(\d+)$/;
-
-export function accessRequest(manager: Manager): BotReply {
-  return {
-    html: requestText(manager),
-    buttons: [
-      [
-        button('✅ Підтвердити', `manager:approve:${manager.id}`),
-        button('❌ Відхилити', `manager:reject:${manager.id}`),
-      ],
-    ],
-  };
-}
-
-export function decidedAccessRequest(manager: Manager, adminName: string): string {
-  const verdict = manager.status === ManagerStatus.ACTIVE ? '✅ Доступ надано' : '❌ Відхилено';
-  return `${requestText(manager)}\n\n${verdict} · ${escapeHtml(adminName)}`;
-}
-
-function requestText(manager: Manager): string {
+export function newManagerNotice(manager: Manager): string {
   return [
-    '👤 <b>Заявка на доступ менеджера</b>',
+    '🆕 <b>Новий менеджер</b>',
     `Ім'я: ${escapeHtml(manager.name)}`,
     `Username: ${manager.username ? `@${escapeHtml(manager.username)}` : '—'}`,
     `Telegram ID: <code>${manager.telegramId}</code>`,
+    '',
+    'Доступ надано автоматично. Забрати його можна у веб-кабінеті.',
   ].join('\n');
 }
 
 export const HELP = [
+  'Щоб створити замовлення — надішліть одним повідомленням кожне значення з нового рядка:',
+  "Номер (необов'язково), ФОП, Сума, Курс (необов'язково), Коментар (необов'язково).",
+  'Можна одразу з файлом. Готово — без підтверджень. Формат покаже /new.',
+  '',
   'Керуйте кнопками знизу 👇 або командами:',
-  '/new — нове замовлення',
-  '/newminus — закрити мінус',
+  '/new — формат нового замовлення',
+  '/newminus — формат закриття мінусу (без номера)',
   '/list — мої відкриті замовлення (/list all — усі)',
-  '/cancel — скасувати створення',
+  '/cancel — забути прикріплені файли',
   '',
   'Про оплати за вашими замовленнями повідомлю сюди автоматично.',
 ].join('\n');
 
-export function startReply(manager: Manager, isNew: boolean): BotReply {
-  if (isNew) {
-    return { html: 'Заявку надіслано адміністраторам. Напишу, щойно розглянуть.' };
-  }
+export function startReply(manager: Manager): BotReply {
   switch (manager.status) {
     case ManagerStatus.ACTIVE:
       return { html: `Вітаю, ${escapeHtml(manager.name)}! 👋\n\n${HELP}`, menu: true };
@@ -61,4 +45,4 @@ export function decisionNotice(manager: Manager): string {
 }
 
 export const NOT_A_MANAGER =
-  'Ця дія доступна лише менеджерам. Надішліть /start, щоб подати заявку.';
+  'Ця дія доступна лише менеджерам. Надішліть /start, щоб отримати доступ.';

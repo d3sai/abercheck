@@ -15,7 +15,9 @@ interface MediaGroupItem {
 describe('AttachmentsService.saveFromTelegram', () => {
   const ADMIN_CHAT_ID = -1001234567890;
   const prisma = { orderAttachment: { create: jest.fn() } };
-  const bot = { telegram: { sendDocument: jest.fn(), sendMediaGroup: jest.fn() } };
+  const bot = {
+    telegram: { sendDocument: jest.fn(), sendPhoto: jest.fn(), sendMediaGroup: jest.fn() },
+  };
   const config = { get: jest.fn().mockReturnValue(ADMIN_CHAT_ID) };
   let service: AttachmentsService;
 
@@ -27,11 +29,12 @@ describe('AttachmentsService.saveFromTelegram', () => {
   };
   const uploader: Initiator = { telegramId: 5000000000n, name: 'Христина' };
 
-  const file = (id: string): TelegramFileRef => ({
+  const file = (id: string, kind: TelegramFileRef['kind'] = 'document'): TelegramFileRef => ({
     fileId: id,
     filename: `${id}.png`,
     mimeType: 'image/png',
     size: 10,
+    kind,
   });
 
   beforeEach(() => {
@@ -91,5 +94,62 @@ describe('AttachmentsService.saveFromTelegram', () => {
     const [, media] = bot.telegram.sendMediaGroup.mock.calls[0] as [number, MediaGroupItem[]];
     expect(media[0]!.caption).toBeUndefined();
     expect(media[1]!.caption).toContain('Замовлення № <b>0000-066717</b>');
+  });
+
+  it('should send a single photo via sendPhoto, not sendDocument', async () => {
+    bot.telegram.sendPhoto.mockResolvedValue({ photo: [{ file_id: 'f1' }], message_id: 10 });
+
+    const attachments = await service.saveFromTelegram(
+      order,
+      [file('f1', 'photo')],
+      uploader,
+      true,
+    );
+
+    expect(bot.telegram.sendPhoto).toHaveBeenCalledTimes(1);
+    expect(bot.telegram.sendDocument).not.toHaveBeenCalled();
+    expect(attachments[0]!.telegramFileId).toBe('f1');
+  });
+
+  it('should group several photos into a photo media-group message', async () => {
+    bot.telegram.sendMediaGroup.mockResolvedValue([
+      { photo: [{ file_id: 'f1' }], message_id: 20 },
+      { photo: [{ file_id: 'f2' }], message_id: 21 },
+    ]);
+
+    await service.saveFromTelegram(
+      order,
+      [file('f1', 'photo'), file('f2', 'photo')],
+      uploader,
+      true,
+    );
+
+    const [, media] = bot.telegram.sendMediaGroup.mock.calls[0] as [number, MediaGroupItem[]];
+    expect(media.every((item) => item.type === 'photo')).toBe(true);
+  });
+
+  it('should send photos and documents as separate messages, captioning only the last one', async () => {
+    bot.telegram.sendPhoto.mockResolvedValue({ photo: [{ file_id: 'f1' }], message_id: 10 });
+    bot.telegram.sendDocument.mockResolvedValue({ document: { file_id: 'f2' }, message_id: 11 });
+
+    const attachments = await service.saveFromTelegram(
+      order,
+      [file('f1', 'photo'), file('f2', 'document')],
+      uploader,
+      true,
+      'Custom caption',
+    );
+
+    expect(bot.telegram.sendPhoto).toHaveBeenCalledWith(
+      ADMIN_CHAT_ID,
+      'f1',
+      expect.objectContaining({ caption: undefined }),
+    );
+    expect(bot.telegram.sendDocument).toHaveBeenCalledWith(
+      ADMIN_CHAT_ID,
+      'f2',
+      expect.objectContaining({ caption: 'Custom caption' }),
+    );
+    expect(attachments.map((a) => a.telegramFileId)).toEqual(['f1', 'f2']);
   });
 });

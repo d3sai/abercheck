@@ -8,16 +8,17 @@ import {
   TELEGRAM_CAPTION_LIMIT,
 } from '../../attachments/attachments.constants';
 import { AttachmentsService, type TelegramFileRef } from '../../attachments/attachments.service';
-import { type Manager, type Order, OrderType, Prisma } from '../../../generated/prisma/client';
+import { type Manager, type Order, OrderType } from '../../../generated/prisma/client';
 import { CreateOrderDto } from '../../orders/dto/create-order.dto';
 import { OrderNumberTakenError } from '../../orders/orders.errors';
 import { OrdersService } from '../../orders/orders.service';
-import { type BotReply, button } from '../core/bot-reply';
+import type { BotReply } from '../core/bot-reply';
 import { escapeHtml, formatMoney } from '../core/format';
 import { TelegramSender } from '../core/telegram-sender';
 import { adminOrderCreatedMessage } from '../notifications/order-templates';
 import {
   parseExchangeRate,
+  parseFreeform,
   parseMoney,
   parseOrderNumber,
   type ParseResult,
@@ -35,31 +36,14 @@ interface FieldSpec {
 }
 
 const FIELDS: readonly FieldSpec[] = [
-  { field: 'orderNumber', label: 'Номер', optional: false, parse: parseOrderNumber },
+  { field: 'orderNumber', label: 'Номер', optional: true, parse: parseOrderNumber },
   { field: 'clientName', label: 'ФОП', optional: false, parse: parseText(255) },
   { field: 'amountDue', label: 'Сума', optional: false, parse: parseMoney },
   { field: 'exchangeRate', label: 'Курс', optional: true, parse: parseExchangeRate },
   { field: 'comment', label: 'Коментар', optional: true, parse: parseText(2000) },
 ];
 
-function fieldsFor(type: OrderType): readonly FieldSpec[] {
-  return type === OrderType.MINUS_CLOSING
-    ? FIELDS.map((f) => (f.field === 'orderNumber' ? { ...f, optional: true } : f))
-    : FIELDS;
-}
-
-export const DraftAction = {
-  Confirm: 'draft:confirm',
-  Cancel: 'draft:cancel',
-} as const;
-
-interface Draft {
-  type: OrderType;
-  data: Partial<Record<DraftField, string>>;
-  files: TelegramFileRef[];
-}
-
-const cancelButton = button('Скасувати', DraftAction.Cancel);
+const ATTACH_TO_RECENT_MS = 15 * 60 * 1000;
 
 function pluralizeFiles(count: number): string {
   const mod10 = count % 10;
@@ -72,7 +56,8 @@ function pluralizeFiles(count: number): string {
 
 @Injectable()
 export class OrderDraftService {
-  private readonly drafts = new Map<bigint, Draft>();
+  private readonly pendingFiles = new Map<bigint, TelegramFileRef[]>();
+  private readonly recentOrders = new Map<bigint, { order: Order; at: number }>();
 
   constructor(
     private readonly orders: OrdersService,
@@ -80,27 +65,88 @@ export class OrderDraftService {
     private readonly sender: TelegramSender,
   ) {}
 
-  hasDraft(userId: bigint): boolean {
-    return this.drafts.has(userId);
+  hint(type: OrderType): BotReply {
+    const isMinus = type === OrderType.MINUS_CLOSING;
+    const title = isMinus ? 'Закриття мінусу' : 'Нове замовлення';
+    const example = [
+      ...(isMinus ? [] : ['0000-066717']),
+      'Чернявський Владислав',
+      '6 158,41 грн',
+      '44,9',
+      'Терміново',
+    ].join('\n');
+    return {
+      html: [
+        `📝 <b>${title}</b>`,
+        'Надішліть одним повідомленням, кожне значення з нового рядка — замовлення створиться одразу',
+        `(файл можна додати тут же або окремо, до ${MAX_FILES_PER_UPLOAD} шт.)`,
+        '',
+        isMinus
+          ? "Рядки: ФОП, Сума, Курс (необов'язково), Коментар (необов'язково)"
+          : "Рядки: Номер (необов'язково), ФОП, Сума, Курс (необов'язково), Коментар (необов'язково)",
+        '',
+        'Наприклад:',
+        `<pre>${example}</pre>`,
+      ].join('\n'),
+    };
   }
 
-  start(userId: bigint, type: OrderType = OrderType.REGULAR): BotReply {
-    this.drafts.set(userId, { type, data: {}, files: [] });
-    return this.template(type);
+  async handleText(manager: Manager, text: string): Promise<BotReply | null> {
+    const raw = this.extractFields(text);
+    if (!raw) {
+      return this.nudge(manager.telegramId);
+    }
+    return this.process(manager, raw);
   }
 
-  async input(userId: bigint, text: string): Promise<BotReply | null> {
-    const draft = this.drafts.get(userId);
-    if (!draft) {
-      return null;
+  private extractFields(text: string): Record<string, string> | null {
+    const labeled = parseTemplate(text, FIELDS);
+    return Object.keys(labeled).length > 0 ? labeled : parseFreeform(text);
+  }
+
+  async addFile(manager: Manager, file: TelegramFileRef, caption?: string): Promise<BotReply> {
+    if (!ALLOWED_MIME_TYPES.has(file.mimeType)) {
+      return { html: '⚠️ Такий тип файлу не підтримується. Додайте фото, PDF або зображення.' };
+    }
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      return { html: '⚠️ Файл завеликий. Максимум 10 МБ.' };
+    }
+    const buffered = this.pendingFiles.get(manager.telegramId)?.length ?? 0;
+    if (buffered >= MAX_FILES_PER_UPLOAD) {
+      return { html: `⚠️ Максимум ${MAX_FILES_PER_UPLOAD} файлів на замовлення.` };
     }
 
-    const fields = fieldsFor(draft.type);
-    const raw = parseTemplate(text, fields);
+    const text = caption?.trim();
+    const raw = text ? this.extractFields(text) : null;
+    if (raw) {
+      this.bufferFile(manager.telegramId, file);
+      return this.process(manager, raw);
+    }
+
+    if (buffered === 0) {
+      const recent = this.recentOrders.get(manager.telegramId);
+      if (recent && Date.now() - recent.at <= ATTACH_TO_RECENT_MS) {
+        return this.attachToRecent(manager, recent, file);
+      }
+    }
+
+    const files = this.bufferFile(manager.telegramId, file);
+    return {
+      html: `📎 Додано «${escapeHtml(file.filename)}» (${files.length}/${MAX_FILES_PER_UPLOAD}).`,
+    };
+  }
+
+  cancel(userId: bigint): BotReply {
+    const hadFiles = this.pendingFiles.delete(userId);
+    const hadRecent = this.recentOrders.delete(userId);
+    return { html: hadFiles || hadRecent ? 'Скасовано.' : 'Нема чого скасовувати.' };
+  }
+
+  private async process(manager: Manager, raw: Record<string, string>): Promise<BotReply> {
     const data: Partial<Record<DraftField, string>> = {};
     const errors: string[] = [];
 
-    for (const field of fields) {
+    for (const field of FIELDS) {
       const value = raw[field.field]?.trim() ?? '';
       if (value.length === 0) {
         if (!field.optional) {
@@ -116,77 +162,97 @@ export class OrderDraftService {
       data[field.field] = result.value;
     }
 
-    if (errors.length === 0 && data.orderNumber && (await this.orders.findByNumber(data.orderNumber))) {
+    if (
+      errors.length === 0 &&
+      data.orderNumber &&
+      (await this.orders.findByNumber(data.orderNumber))
+    ) {
       errors.push(`«Номер»: замовлення № ${data.orderNumber} вже є в системі.`);
     }
 
     if (errors.length > 0) {
       return {
         html: ['⚠️ Виправте та надішліть ще раз:', ...errors.map((e) => `• ${e}`)].join('\n'),
-        buttons: [[cancelButton]],
       };
     }
 
-    draft.data = data;
-    return this.summary(draft);
+    return this.createOrder(manager, data);
   }
 
-  async addFile(userId: bigint, file: TelegramFileRef, caption?: string): Promise<BotReply | null> {
-    const draft = this.drafts.get(userId);
-    if (!draft) {
-      return null;
-    }
-    if (!ALLOWED_MIME_TYPES.has(file.mimeType)) {
-      return { html: '⚠️ Такий тип файлу не підтримується. Додайте фото, PDF або зображення.' };
-    }
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      return { html: '⚠️ Файл завеликий. Максимум 10 МБ.' };
-    }
-    if (draft.files.length >= MAX_FILES_PER_UPLOAD) {
-      return { html: `⚠️ Максимум ${MAX_FILES_PER_UPLOAD} файлів на замовлення.` };
-    }
-    draft.files.push(file);
-
-    const text = caption?.trim();
-    if (!text) {
-      return {
-        html: `📎 Додано «${escapeHtml(file.filename)}» (${draft.files.length}/${MAX_FILES_PER_UPLOAD}).`,
-      };
-    }
-    return this.input(userId, text);
-  }
-
-  async confirm(manager: Manager): Promise<BotReply | null> {
-    const draft = this.drafts.get(manager.telegramId);
-    if (
-      !draft ||
-      !fieldsFor(draft.type).every((f) => f.optional || draft.data[f.field] !== undefined)
-    ) {
-      return null;
-    }
-    this.drafts.delete(manager.telegramId);
-
-    const dto = plainToInstance(CreateOrderDto, { orderType: draft.type, ...draft.data });
+  private async createOrder(
+    manager: Manager,
+    data: Partial<Record<DraftField, string>>,
+  ): Promise<BotReply> {
+    const orderType = data.orderNumber ? OrderType.REGULAR : OrderType.MINUS_CLOSING;
+    const dto = plainToInstance(CreateOrderDto, { orderType, ...data });
     if (validateSync(dto).length > 0) {
-      return { html: '⚠️ Дані замовлення некоректні. Почніть заново: /new' };
+      return { html: '⚠️ Дані замовлення некоректні. Спробуйте ще раз.' };
     }
-    const hasFiles = draft.files.length > 0;
+
+    const files = this.pendingFiles.get(manager.telegramId) ?? [];
+    const hasFiles = files.length > 0;
     try {
       const order = await this.orders.create(manager.id, dto, { notify: !hasFiles });
+      this.pendingFiles.delete(manager.telegramId);
       if (hasFiles) {
-        await this.notifyWithAttachment(order, manager, draft.files);
+        await this.notifyWithAttachment(order, manager, files);
       }
-      return {
-        html: `✅ Замовлення № <b>${escapeHtml(order.orderNumber)}</b> створено — повідомлю про оплату.`,
-      };
+      this.recentOrders.set(manager.telegramId, { order, at: Date.now() });
+      return this.createdReply(order);
     } catch (error) {
       if (error instanceof OrderNumberTakenError) {
-        return {
-          html: `⚠️ Замовлення № ${escapeHtml(error.orderNumber)} вже є в системі. Почніть заново: /new`,
-        };
+        return { html: `⚠️ Замовлення № ${escapeHtml(error.orderNumber)} вже є в системі.` };
       }
       throw error;
     }
+  }
+
+  private createdReply(order: Order): BotReply {
+    const label =
+      order.orderType === OrderType.MINUS_CLOSING ? '➖ Закриття мінусу' : '✅ Замовлення';
+    return {
+      html: [
+        `${label} № <b>${escapeHtml(order.orderNumber)}</b> створено — повідомлю про оплату.`,
+        `${escapeHtml(order.clientName)} · ${formatMoney(order.amountDue)} грн`,
+      ].join('\n'),
+    };
+  }
+
+  private async attachToRecent(
+    manager: Manager,
+    recent: { order: Order; at: number },
+    file: TelegramFileRef,
+  ): Promise<BotReply> {
+    await this.attachments.saveFromTelegram(
+      recent.order,
+      [file],
+      { telegramId: manager.telegramId, name: manager.name },
+      true,
+    );
+    recent.at = Date.now();
+    return {
+      html: `📎 Додав «${escapeHtml(file.filename)}» до замовлення № <b>${escapeHtml(recent.order.orderNumber)}</b>.`,
+    };
+  }
+
+  private nudge(userId: bigint): BotReply | null {
+    const files = this.pendingFiles.get(userId);
+    if (!files?.length) {
+      return null;
+    }
+    return {
+      html: [
+        `У вас ${files.length} ${pluralizeFiles(files.length)} без даних замовлення.`,
+        'Надішліть ФОП, Суму (і за потреби Номер, Курс, Коментар) одним повідомленням — або /cancel.',
+      ].join('\n'),
+    };
+  }
+
+  private bufferFile(userId: bigint, file: TelegramFileRef): TelegramFileRef[] {
+    const files = this.pendingFiles.get(userId) ?? [];
+    files.push(file);
+    this.pendingFiles.set(userId, files);
+    return files;
   }
 
   // Merges the "order created" admin notice into the file's caption so admins get one message, not two.
@@ -212,59 +278,5 @@ export class OrderDraftService {
         await this.sender.sendToAdmins(notice);
       }
     }
-  }
-
-  cancel(userId: bigint): BotReply {
-    const existed = this.drafts.delete(userId);
-    return { html: existed ? 'Скасовано.' : 'Немає активного замовлення.' };
-  }
-
-  private template(type: OrderType): BotReply {
-    const fields = fieldsFor(type);
-    const block = fields.map((f) => `${f.label}: `).join('\n');
-    const required = fields
-      .filter((f) => !f.optional)
-      .map((f) => f.label)
-      .join(', ');
-    const optional = fields
-      .filter((f) => f.optional)
-      .map((f) => f.label)
-      .join(', ');
-    const title = type === OrderType.MINUS_CLOSING ? 'Закриття мінусу' : 'Нове замовлення';
-    return {
-      html: [
-        `📝 <b>${title}</b>`,
-        'Заповніть і надішліть одним повідомленням',
-        `(файл можна додати тут же або окремо, до ${MAX_FILES_PER_UPLOAD} шт.)`,
-        '',
-        `<pre>${block}</pre>`,
-        `Обов'язково: ${required}${optional ? `\nНеобов'язково: ${optional}` : ''}`,
-      ].join('\n'),
-      buttons: [[cancelButton]],
-    };
-  }
-
-  private summary({ type, data, files }: Draft): BotReply {
-    const display = (field: DraftField, value: string): string => {
-      if (field === 'amountDue') return `${formatMoney(new Prisma.Decimal(value))} грн`;
-      if (field === 'exchangeRate') return value.replace('.', ',');
-      return escapeHtml(value);
-    };
-    const fields = fieldsFor(type);
-    const width = Math.max(...fields.map((f) => f.label.length)) + 2;
-    const lines = fields.map(({ field, label }) => {
-      const value = data[field];
-      return `${label.padEnd(width)}${value === undefined ? '—' : display(field, value)}`;
-    });
-    const filesLine =
-      files.length > 0 ? `\n📎 ${files.length} ${pluralizeFiles(files.length)}` : '';
-    return {
-      html: [`<b>Перевірте замовлення</b>`, `<pre>${lines.join('\n')}</pre>${filesLine}`].join(
-        '\n',
-      ),
-      buttons: [
-        [button('✅ Створити', DraftAction.Confirm), button('Скасувати', DraftAction.Cancel)],
-      ],
-    };
   }
 }

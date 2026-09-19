@@ -12,7 +12,6 @@ describe('ManagersService', () => {
     create: jest.fn(),
     findMany: jest.fn(),
     update: jest.fn(),
-    updateMany: jest.fn(),
   };
   const events = { emit: jest.fn() };
   const profile = { telegramId: 5000000000n, name: 'Христина', username: 'khrystyna' };
@@ -33,12 +32,14 @@ describe('ManagersService', () => {
   afterEach(() => jest.resetAllMocks());
 
   describe('requestAccess', () => {
-    it('should create a pending request for a new user', async () => {
+    it('should activate a new user immediately', async () => {
       manager.findUnique.mockResolvedValue(null);
-      manager.create.mockResolvedValue({ id: 1, status: ManagerStatus.PENDING });
+      manager.create.mockResolvedValue({ id: 1, status: ManagerStatus.ACTIVE });
 
       await expect(service.requestAccess(profile)).resolves.toMatchObject({ isNew: true });
-      expect(manager.create).toHaveBeenCalledWith({ data: profile });
+      expect(manager.create).toHaveBeenCalledWith({
+        data: { ...profile, status: ManagerStatus.ACTIVE },
+      });
     });
 
     it('should only refresh the name of a known user without touching the status', async () => {
@@ -51,26 +52,6 @@ describe('ManagersService', () => {
         data: { name: 'Христина', username: 'khrystyna' },
       });
       expect(manager.create).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('decide', () => {
-    it('should activate a pending request', async () => {
-      manager.updateMany.mockResolvedValue({ count: 1 });
-      manager.findUnique.mockResolvedValue({ id: 1, status: ManagerStatus.ACTIVE });
-
-      await expect(service.decide(1, true)).resolves.toMatchObject({ status: 'ACTIVE' });
-      expect(manager.updateMany).toHaveBeenCalledWith({
-        where: { id: 1, status: ManagerStatus.PENDING },
-        data: { status: ManagerStatus.ACTIVE },
-      });
-    });
-
-    it('should return null when the request was already decided', async () => {
-      manager.updateMany.mockResolvedValue({ count: 0 });
-
-      await expect(service.decide(1, false)).resolves.toBeNull();
-      expect(manager.findUnique).not.toHaveBeenCalled();
     });
   });
 

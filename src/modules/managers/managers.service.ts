@@ -46,16 +46,10 @@ export class ManagersService {
       return { manager, isNew: false };
     }
 
-    const manager = await this.prisma.manager.create({ data: { telegramId, name, username } });
-    return { manager, isNew: true };
-  }
-
-  async decide(id: number, approve: boolean): Promise<Manager | null> {
-    const { count } = await this.prisma.manager.updateMany({
-      where: { id, status: ManagerStatus.PENDING },
-      data: { status: approve ? ManagerStatus.ACTIVE : ManagerStatus.REJECTED },
+    const manager = await this.prisma.manager.create({
+      data: { telegramId, name, username, status: ManagerStatus.ACTIVE },
     });
-    return count === 0 ? null : this.findById(id);
+    return { manager, isNew: true };
   }
 
   async updateAccess(id: number, change: AccessChange): Promise<Manager | null> {
