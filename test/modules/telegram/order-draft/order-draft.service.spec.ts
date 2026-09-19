@@ -78,19 +78,31 @@ describe('OrderDraftService', () => {
 
   afterEach(() => jest.resetAllMocks());
 
-  it('should show a fillable hint without creating anything', () => {
+  it('should star the number, name and amount in the regular hint', () => {
     const reply = service.hint(OrderType.REGULAR);
 
-    expect(reply.html).toContain('Номер');
+    expect(reply.html).toContain(
+      "Порядок рядків (* — обов'язкове):\nНомер*, ФОП*, Сума*, Курс, Коментар\n",
+    );
     expect(reply.html).toContain('0000-066717');
     expect(reply.buttons).toBeUndefined();
   });
 
-  it('should omit the order number line from the minus-closing example', () => {
+  it('should star only the name and amount in the minus-closing hint', () => {
     const reply = service.hint(OrderType.MINUS_CLOSING);
 
+    expect(reply.html).toContain(
+      "Порядок рядків (* — обов'язкове):\nФОП*, Сума*, Курс, Коментар\n",
+    );
+    expect(reply.html).not.toContain('Номер');
     expect(reply.html).not.toContain('0000-066717');
     expect(reply.html).toContain('Закриття мінусу');
+  });
+
+  it('should never label anything as optional', () => {
+    const html = [OrderType.REGULAR, OrderType.MINUS_CLOSING].map((t) => service.hint(t).html);
+
+    expect(html.join('\n')).not.toMatch(/необов/i);
   });
 
   it('should ignore plain chat text with no recognizable fields', async () => {
@@ -322,19 +334,25 @@ describe('OrderDraftService', () => {
       expect(sender.sendToAdmins).toHaveBeenCalledWith(expect.stringContaining('Нове замовлення'));
     });
 
-    it('should attach a stray file to the order just created instead of starting a new upload', async () => {
+    it('should treat a file sent after a created order as the start of the next order', async () => {
       orders.create.mockResolvedValue(createdOrder());
       await service.handleText(MANAGER, template());
-      attachments.saveFromTelegram.mockClear();
 
       const reply = await service.addFile(MANAGER, file('after.png'));
 
-      expect(reply.html).toContain('до замовлення');
+      expect(reply.html).toContain('Додано');
+      expect(reply.html).toContain('1/5');
+      expect(attachments.saveFromTelegram).not.toHaveBeenCalled();
+
+      orders.create.mockResolvedValue(createdOrder({ id: 2, orderNumber: '0000-066718' }));
+      await service.handleText(MANAGER, template({ Номер: '0000-066718' }));
+
       expect(attachments.saveFromTelegram).toHaveBeenCalledWith(
-        expect.objectContaining({ orderNumber: '0000-066717' }),
+        expect.objectContaining({ orderNumber: '0000-066718' }),
         [file('after.png')],
         { telegramId: MANAGER.telegramId, name: MANAGER.name },
         true,
+        expect.any(String),
       );
     });
   });

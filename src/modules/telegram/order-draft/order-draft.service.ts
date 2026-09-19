@@ -43,8 +43,6 @@ const FIELDS: readonly FieldSpec[] = [
   { field: 'comment', label: 'Коментар', optional: true, parse: parseText(2000) },
 ];
 
-const ATTACH_TO_RECENT_MS = 15 * 60 * 1000;
-
 function pluralizeFiles(count: number): string {
   const mod10 = count % 10;
   const mod100 = count % 100;
@@ -57,7 +55,6 @@ function pluralizeFiles(count: number): string {
 @Injectable()
 export class OrderDraftService {
   private readonly pendingFiles = new Map<bigint, TelegramFileRef[]>();
-  private readonly recentOrders = new Map<bigint, { order: Order; at: number }>();
 
   constructor(
     private readonly orders: OrdersService,
@@ -68,6 +65,10 @@ export class OrderDraftService {
   hint(type: OrderType): BotReply {
     const isMinus = type === OrderType.MINUS_CLOSING;
     const title = isMinus ? 'Закриття мінусу' : 'Нове замовлення';
+    const fields = isMinus ? FIELDS.filter((f) => f.field !== 'orderNumber') : FIELDS;
+    const lines = fields.map(
+      (f) => f.label + (f.field === 'orderNumber' || !f.optional ? '*' : ''),
+    );
     const example = [
       ...(isMinus ? [] : ['0000-066717']),
       'Чернявський Владислав',
@@ -78,12 +79,11 @@ export class OrderDraftService {
     return {
       html: [
         `📝 <b>${title}</b>`,
-        'Надішліть одним повідомленням, кожне значення з нового рядка — замовлення створиться одразу',
-        `(файл можна додати тут же або окремо, до ${MAX_FILES_PER_UPLOAD} шт.)`,
+        'Надішліть одним повідомленням, кожне значення з нового рядка',
+        `Файли (до ${MAX_FILES_PER_UPLOAD}) — разом із повідомленням або перед ним`,
         '',
-        isMinus
-          ? "Рядки: ФОП, Сума, Курс (необов'язково), Коментар (необов'язково)"
-          : "Рядки: Номер (необов'язково), ФОП, Сума, Курс (необов'язково), Коментар (необов'язково)",
+        "Порядок рядків (* — обов'язкове):",
+        lines.join(', '),
         '',
         'Наприклад:',
         `<pre>${example}</pre>`,
@@ -111,26 +111,16 @@ export class OrderDraftService {
     if (file.size > MAX_FILE_SIZE_BYTES) {
       return { html: '⚠️ Файл завеликий. Максимум 10 МБ.' };
     }
-    const buffered = this.pendingFiles.get(manager.telegramId)?.length ?? 0;
-    if (buffered >= MAX_FILES_PER_UPLOAD) {
+    if ((this.pendingFiles.get(manager.telegramId)?.length ?? 0) >= MAX_FILES_PER_UPLOAD) {
       return { html: `⚠️ Максимум ${MAX_FILES_PER_UPLOAD} файлів на замовлення.` };
     }
 
+    const files = this.bufferFile(manager.telegramId, file);
     const text = caption?.trim();
     const raw = text ? this.extractFields(text) : null;
     if (raw) {
-      this.bufferFile(manager.telegramId, file);
       return this.process(manager, raw);
     }
-
-    if (buffered === 0) {
-      const recent = this.recentOrders.get(manager.telegramId);
-      if (recent && Date.now() - recent.at <= ATTACH_TO_RECENT_MS) {
-        return this.attachToRecent(manager, recent, file);
-      }
-    }
-
-    const files = this.bufferFile(manager.telegramId, file);
     return {
       html: `📎 Додано «${escapeHtml(file.filename)}» (${files.length}/${MAX_FILES_PER_UPLOAD}).`,
     };
@@ -138,8 +128,7 @@ export class OrderDraftService {
 
   cancel(userId: bigint): BotReply {
     const hadFiles = this.pendingFiles.delete(userId);
-    const hadRecent = this.recentOrders.delete(userId);
-    return { html: hadFiles || hadRecent ? 'Скасовано.' : 'Нема чого скасовувати.' };
+    return { html: hadFiles ? 'Скасовано.' : 'Нема чого скасовувати.' };
   }
 
   private async process(manager: Manager, raw: Record<string, string>): Promise<BotReply> {
@@ -197,7 +186,6 @@ export class OrderDraftService {
       if (hasFiles) {
         await this.notifyWithAttachment(order, manager, files);
       }
-      this.recentOrders.set(manager.telegramId, { order, at: Date.now() });
       return this.createdReply(order);
     } catch (error) {
       if (error instanceof OrderNumberTakenError) {
@@ -218,23 +206,6 @@ export class OrderDraftService {
     };
   }
 
-  private async attachToRecent(
-    manager: Manager,
-    recent: { order: Order; at: number },
-    file: TelegramFileRef,
-  ): Promise<BotReply> {
-    await this.attachments.saveFromTelegram(
-      recent.order,
-      [file],
-      { telegramId: manager.telegramId, name: manager.name },
-      true,
-    );
-    recent.at = Date.now();
-    return {
-      html: `📎 Додав «${escapeHtml(file.filename)}» до замовлення № <b>${escapeHtml(recent.order.orderNumber)}</b>.`,
-    };
-  }
-
   private nudge(userId: bigint): BotReply | null {
     const files = this.pendingFiles.get(userId);
     if (!files?.length) {
@@ -243,7 +214,7 @@ export class OrderDraftService {
     return {
       html: [
         `У вас ${files.length} ${pluralizeFiles(files.length)} без даних замовлення.`,
-        'Надішліть ФОП, Суму (і за потреби Номер, Курс, Коментар) одним повідомленням — або /cancel.',
+        'Надішліть дані замовлення одним повідомленням (формат — /new) або /cancel.',
       ].join('\n'),
     };
   }
